@@ -6,7 +6,7 @@ import frappe
 from frappe import _dict, _
 from frappe.model.document import Document
 from frappe.utils.safe_exec import get_safe_globals, safe_exec
-from frappe.integrations.utils import make_post_request
+from frappe.integrations.utils import make_post_request, make_request
 from frappe.desk.form.utils import get_pdf_link
 from frappe.utils import add_to_date, nowdate, datetime
 
@@ -212,7 +212,35 @@ class WhatsAppNotification(Document):
             if template.buttons:
                 button_fields = self.button_fields.split(",") if self.button_fields else []
                 for idx, btn in enumerate(template.buttons):
-                    if btn.button_type == "Visit Website" and btn.url_type == "Dynamic":
+
+                    # FIX: OTP copy-code button — Meta requires a button component
+                    # with sub_type=url and the OTP code as the parameter.
+                    # The OTP value comes from the first body parameter (parameters[0]).
+                    is_otp_button = (
+                        btn.button_type == "Visit Website"
+                        and "otp_type=COPY_CODE" in (btn.website_url or "")
+                    )
+                    if is_otp_button:
+                        # Extract the OTP value from the body parameters already built above
+                        otp_value = None
+                        body_components = [
+                            c for c in data['template']['components']
+                            if c.get("type") == "body"
+                        ]
+                        if body_components and body_components[0].get("parameters"):
+                            otp_value = body_components[0]["parameters"][0].get("text")
+
+                        if otp_value:
+                            data['template']['components'].append({
+                                "type": "button",
+                                "sub_type": "url",
+                                "index": str(idx),
+                                "parameters": [
+                                    {"type": "text", "text": str(otp_value)}
+                                ]
+                            })
+
+                    elif btn.button_type == "Visit Website" and btn.url_type == "Dynamic":
                         if button_fields:
                             data['template']['components'].append({
                                 "type": "button",
@@ -243,7 +271,6 @@ class WhatsAppNotification(Document):
                                     {"type": "action", "action": doc.get(button_fields.pop(0))}
                                 ]
                             })
-
 
             self.notify(data, doc_data)
 
@@ -405,4 +432,3 @@ def trigger_notifications(method="daily"):
         for d in doc_list:
             alert = frappe.get_doc("WhatsApp Notification", d.name)
             alert.get_documents_for_today()
-           
