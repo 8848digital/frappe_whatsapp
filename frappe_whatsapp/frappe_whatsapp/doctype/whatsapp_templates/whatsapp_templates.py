@@ -25,7 +25,9 @@ class WhatsAppTemplates(Document):  # nosemgrep: frappe-modifying-but-not-commit
             self.get_session_id(self.sample)
             self.get_media_id(self.sample)
 
-        if not self.is_new():
+        # FIX 1: Skip syncing to Meta if the template is already APPROVED.
+        # Meta does not allow editing approved templates via API and returns 400.
+        if not self.is_new() and self.status != "APPROVED":
             self.update_template()
 
     def set_whatsapp_account(self):
@@ -119,6 +121,42 @@ class WhatsAppTemplates(Document):  # nosemgrep: frappe-modifying-but-not-commit
         # vetted file handling — never feed a raw URL to open().
         return frappe.get_doc("File", {"file_url": file_url}).get_content()
 
+    def _build_button(self, btn):
+        """
+        FIX 2: Build the correct Meta API button payload for a given WhatsApp Button row.
+        Authentication OTP copy-code buttons must use type=OTP, not type=URL.
+        """
+        # Detect OTP copy-code button by checking the website URL pattern
+        is_otp_button = (
+            btn.button_type == "Visit Website"
+            and "otp_type=COPY_CODE" in (btn.website_url or "")
+        )
+
+        if is_otp_button:
+            # Meta requires this exact structure for authentication OTP buttons
+            return {
+                "type": "OTP",
+                "otp_type": "COPY_CODE"
+            }
+
+        b = {"type": btn.button_type, "text": btn.button_label}
+
+        if btn.button_type == "Visit Website":
+            b["type"] = "URL"
+            b["url"] = btn.website_url
+            if btn.url_type == "Dynamic" and btn.example_url:
+                b["example"] = btn.example_url.split(",")
+        elif btn.button_type == "Call Phone":
+            b["type"] = "PHONE_NUMBER"
+            b["phone_number"] = btn.phone_number
+        elif btn.button_type == "Quick Reply":
+            b["type"] = "QUICK_REPLY"
+        elif btn.button_type == "Multi-Product Message":
+            b["type"] = "MPM"
+        elif btn.button_type == "Catalog":
+            b["type"] = "CATALOG"
+
+        return b
 
     def after_insert(self):  # nosemgrep: frappe-modifying-but-not-committing -- self.actual_name/id/status are persisted via self.db_update() after the Meta round-trip; the static check can't trace through the API call
         # actual_name / id / status are persisted via self.db_update() below
@@ -149,29 +187,11 @@ class WhatsAppTemplates(Document):  # nosemgrep: frappe-modifying-but-not-commit
         if self.footer:
             data["components"].append({"type": "FOOTER", "text": self.footer})
 
-        # add buttons
+        # add buttons — FIX 2 applied via _build_button()
         if self.buttons:
             button_block = {"type": "BUTTONS", "buttons": []}
             for btn in self.buttons:
-                b = {"type": btn.button_type, "text": btn.button_label}
-
-                if btn.button_type == "Visit Website":
-                    b["type"] = "URL"
-                    b["url"] = btn.website_url
-                    if btn.url_type == "Dynamic" and btn.example_url:
-                        b["example"] = btn.example_url.split(",")
-                elif btn.button_type == "Call Phone":
-                    b["type"] = "PHONE_NUMBER"
-                    b["phone_number"] = btn.phone_number
-                elif btn.button_type == "Quick Reply":
-                    b["type"] = "QUICK_REPLY"
-                elif btn.button_type == "Multi-Product Message":
-                    b["type"] = "MPM"
-                elif btn.button_type == "Catalog":
-                    b["type"] = "CATALOG"
-
-                button_block["buttons"].append(b)
-
+                button_block["buttons"].append(self._build_button(btn))
             data["components"].append(button_block)
 
         try:
@@ -207,29 +227,12 @@ class WhatsAppTemplates(Document):  # nosemgrep: frappe-modifying-but-not-commit
             data["components"].append(self.get_header())
         if self.footer:
             data["components"].append({"type": "FOOTER", "text": self.footer})
+
+        # add buttons — FIX 2 applied via _build_button()
         if self.buttons:
             button_block = {"type": "BUTTONS", "buttons": []}
             for btn in self.buttons:
-                b = {"type": btn.button_type, "text": btn.button_label}
-
-                if btn.button_type == "Visit Website":
-                    b["type"] = "URL"
-                    b["url"] = btn.website_url
-                    if btn.url_type == "Dynamic" and btn.example_url:
-                        b["example"] = btn.example_url.split(",")
-                elif btn.button_type == "Call Phone":
-                    b["type"] = "PHONE_NUMBER"
-                    b["phone_number"] = btn.phone_number
-                elif btn.button_type == "Quick Reply":
-                    b["type"] = "QUICK_REPLY"
-                elif btn.button_type == "Multi-Product Message":
-                    b["type"] = "MPM"
-                    # MPM buttons often require additional fields like catalog_id
-                elif btn.button_type == "Catalog":
-                    b["type"] = "CATALOG"
-
-                button_block["buttons"].append(b)
-
+                button_block["buttons"].append(self._build_button(btn))
             data["components"].append(button_block)
 
         try:
@@ -366,13 +369,17 @@ def fetch():
                     elif component["type"] == "BUTTONS":
                         doc.set("buttons", [])
                         frappe.db.delete("WhatsApp Button", {"parent": doc.name, "parenttype": "WhatsApp Templates"})
+
+                        # FIX 3: Added OTP to typeMap so fetch() doesn't log errors
+                        # and skip OTP buttons when pulling templates from Meta.
                         typeMap = {
                             "URL": "Visit Website",
                             "PHONE_NUMBER": "Call Phone",
                             "QUICK_REPLY": "Quick Reply",
                             "FLOW": "Flow",
                             "MPM": "Multi-Product Message",
-                            "CATALOG": "Catalog"
+                            "CATALOG": "Catalog",
+                            "OTP": "Visit Website",  # OTP copy-code stored as Visit Website locally
                         }
 
                         for i, button in enumerate(component.get("buttons", []), start=1):
@@ -383,10 +390,23 @@ def fetch():
 
                             btn = {}
                             btn["button_type"] = typeMap[button["type"]]
-                            btn["button_label"] = button.get("text")
+                            btn["button_label"] = button.get("text", "Copy code")
                             btn["sequence"] = i
 
-                            if button["type"] == "URL":
+                            # FIX 3: Reconstruct the OTP URL so _build_button()
+                            # can detect it correctly on next save/create.
+                            if button["type"] == "OTP":
+                                otp_type = button.get("otp_type", "COPY_CODE")
+                                btn["website_url"] = (
+                                    f"https://www.whatsapp.com/otp/code/"
+                                    f"?otp_type={otp_type}&code={{{{1}}}}"
+                                )
+                                btn["url_type"] = "Dynamic"
+                                btn["example_url"] = (
+                                    f"https://www.whatsapp.com/otp/code/"
+                                    f"?otp_type={otp_type}&code=123456"
+                                )
+                            elif button["type"] == "URL":
                                 btn["website_url"] = button.get("url")
                                 if "{{" in btn["website_url"]:
                                     btn["url_type"] = "Dynamic"
