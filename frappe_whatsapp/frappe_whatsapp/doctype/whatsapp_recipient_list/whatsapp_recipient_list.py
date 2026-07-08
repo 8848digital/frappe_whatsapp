@@ -1,6 +1,7 @@
 import frappe
 import json
 from frappe import _
+from frappe.model import default_fields
 from frappe.model.document import Document
 
 
@@ -9,7 +10,6 @@ class WhatsAppRecipientList(Document):
 		self.validate_recipients()
 	
 	def validate_recipients(self):
-		print(self.__dict__)
 		if not self.is_new():
 			if not self.recipients:
 				frappe.throw(_("At least one recipient is required"))
@@ -30,10 +30,10 @@ class WhatsAppRecipientList(Document):
 			fields.append(name_field)
 		if data_fields:
 			meta = frappe.get_meta(doctype)
-			# print(meta.fields)
-			for field in meta.fields:
-				if field.fieldname not in fields and field.fieldname in data_fields:
-					fields.append(field.fieldname)
+			meta_fieldnames = {f.fieldname for f in meta.fields}
+			for field in data_fields:
+				if field not in fields and (field in meta_fieldnames or field in default_fields):
+					fields.append(field)
 		# Get records from the doctype
 		records = frappe.get_all(
 			doctype,
