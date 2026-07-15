@@ -74,6 +74,8 @@ def _send_whatsapp_notification(notification_name, doctype, docname, commit=Fals
 
 def get_notifications_map():
     """Get mapping."""
+    if cached_value:=frappe.cache().get_value("whatsapp_notification_map"):
+        return cached_value
     if frappe.flags.in_patch and not frappe.db.table_exists("WhatsApp Notification"):
         return {}
 
