@@ -14,6 +14,12 @@ from frappe_whatsapp.utils import get_whatsapp_account, sanitize_param
 from frappe_whatsapp.utils.recipients import get_role_recipients, log_skipped
 
 
+def _dedupe(numbers):
+    """Keep order, drop blanks and duplicates."""
+    seen = set()
+    return [n for n in numbers if n and not (n in seen or seen.add(n))]
+
+
 class WhatsAppNotification(Document):
     """Notification."""
 
@@ -136,8 +142,8 @@ class WhatsAppNotification(Document):
         template = default_template or frappe.get_doc("WhatsApp Templates", self.template)
 
         if template:
-            recipients = self.get_recipients(doc, doc_data, phone_no)
-            if not recipients:
+            inline_numbers, role_numbers = self.get_recipients(doc, doc_data, phone_no)
+            if not inline_numbers and not role_numbers:
                 return
 
             data = {
@@ -315,10 +321,25 @@ class WhatsAppNotification(Document):
             # The payload is built once; only the recipient and the request
             # itself repeat.
             sent = 0
-            for number in recipients:
+            for number in inline_numbers:
                 data["to"] = number
                 if self.notify(data, doc_data):
                     sent += 1
+
+            if role_numbers:
+                # A role can resolve to dozens of people and Meta rate-limits
+                # per phone number id, so role sends run outside the request.
+                # Field-based sends stay inline, exactly as before.
+                frappe.enqueue(
+                    "frappe_whatsapp.utils.send_role_notifications",
+                    queue="long",
+                    enqueue_after_commit=True,
+                    notification=self.name,
+                    data=dict(data, to=None),
+                    numbers=role_numbers,
+                    reference_doctype=doc_data.get("doctype"),
+                    reference_name=doc_data.get("name"),
+                )
 
             if sent:
                 self.apply_property_after_alert(doc_data)
@@ -328,32 +349,45 @@ class WhatsAppNotification(Document):
                     indicator="green",
                     alert=True
                 )
+            elif role_numbers:
+                frappe.msgprint(
+                    f"WhatsApp message queued for {len(role_numbers)} recipients",
+                    indicator="green",
+                    alert=True
+                )
 
     def get_recipients(self, doc, doc_data, phone_no=None):
         """Numbers this notification should be sent to.
+
+        Returns (inline_numbers, role_numbers). Field-based numbers are sent
+        inline, preserving existing behaviour; role-based numbers can fan out
+        to many people and are handed to a background job by the caller.
 
         An explicit phone_no is the only recipient: the _data_list scheduler
         path enumerates its own recipients per row, so also unioning roles
         there would multiply sends by the number of rows.
         """
         if phone_no:
-            return [self.format_number(phone_no)]
+            return [self.format_number(phone_no)], []
 
-        numbers = []
-
+        inline_numbers = []
         if self.field_name:
             field_number = doc_data.get(self.field_name)
             if field_number:
-                numbers.append(self.format_number(field_number))
+                inline_numbers.append(self.format_number(field_number))
 
+        role_numbers = []
         if self.get("recipients"):
             role_recipients, skipped = get_role_recipients(self, doc)
-            numbers += [recipient["phone"] for recipient in role_recipients]
+            role_numbers = [recipient["phone"] for recipient in role_recipients]
             log_skipped(self.name, skipped)
 
-        # Keep order, drop blanks and duplicates.
-        seen = set()
-        return [n for n in numbers if n and not (n in seen or seen.add(n))]
+        inline_numbers = _dedupe(inline_numbers)
+        # A number already covered inline must not be messaged twice.
+        already_sent = set(inline_numbers)
+        role_numbers = [n for n in _dedupe(role_numbers) if n not in already_sent]
+
+        return inline_numbers, role_numbers
 
     def apply_property_after_alert(self, doc_data):
         """Set the configured field on the reference document, once per run."""

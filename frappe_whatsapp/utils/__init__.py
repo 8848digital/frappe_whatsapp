@@ -83,6 +83,41 @@ def _send_whatsapp_notification(notification_name, doctype, docname, commit=Fals
         )
 
 
+def send_role_notifications(notification, data, numbers, reference_doctype=None, reference_name=None):
+    """Send an already-built payload to role-resolved recipients.
+
+    Runs as a background job: a role can resolve to dozens of people, and Meta
+    rate-limits per phone number id, so a long fan-out must not block the
+    request that triggered it. Field-based notifications still send inline.
+
+    Only `to` differs between recipients; the payload was built once by
+    send_template_message.
+    """
+    notification_doc = frappe.get_doc("WhatsApp Notification", notification)
+
+    # notify() only reads doctype and name off this, so the reference is
+    # rebuilt rather than carrying a whole document through the queue.
+    doc_data = None
+    if reference_doctype and reference_name:
+        doc_data = frappe._dict(doctype=reference_doctype, name=reference_name)
+
+    sent = 0
+    for number in numbers:
+        data["to"] = number
+        try:
+            if notification_doc.notify(data, doc_data):
+                sent += 1
+        except Exception:
+            # One bad recipient must not strand the rest of the batch.
+            frappe.log_error(
+                title=f"WhatsApp role notification failed: {notification}",
+                message=f"Recipient: {number}\n\n{frappe.get_traceback()}",
+            )
+
+    if sent and doc_data:
+        notification_doc.apply_property_after_alert(doc_data)
+
+
 def get_notifications_map():
     """Get mapping."""
     if cached_value:=frappe.cache().get_value("whatsapp_notification_map"):
