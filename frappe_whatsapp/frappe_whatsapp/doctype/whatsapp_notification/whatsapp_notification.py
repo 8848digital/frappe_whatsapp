@@ -53,6 +53,15 @@ class WhatsAppNotification(Document):
                     indicator="orange",
                     alert=True,
                 )
+        if self.get("recipients") and (self.custom_attachment or self.attach_document_print):
+            frappe.throw(_(
+                "Recipients by Role cannot be combined with {0} or {1}: the same "
+                "private-file link would be sent to everyone holding the role."
+            ).format(
+                frappe.bold(_("Custom Attachment")),
+                frappe.bold(_("Attach Document Print")),
+            ))
+
         if self.custom_attachment:
             if not self.attach and not self.attach_from_field:
                 frappe.throw(_("Either {0} a file or add a {1} to send attachemt").format(
