@@ -145,13 +145,16 @@ def get_role_recipients(notification, doc=None):
         )
     }
     user_numbers = {name: d.mobile_no for name, d in user_details.items()}
+    employee_numbers = (
+        _get_employee_numbers(users) if source != SOURCE_USER_ONLY else {}
+    )
 
     recipients = []
     skipped = []
     seen = set()
 
     for user in users:
-        raw = resolve_phone(user, source, user_numbers)
+        raw = resolve_phone(user, source, user_numbers, employee_numbers)
         if not raw:
             skipped.append({"user": user, "reason": "no phone number"})
             continue
