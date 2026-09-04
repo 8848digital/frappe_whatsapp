@@ -83,7 +83,9 @@ def _send_whatsapp_notification(notification_name, doctype, docname, commit=Fals
         )
 
 
-def send_role_notifications(notification, data, numbers, reference_doctype=None, reference_name=None):
+def send_role_notifications(
+    notification, data, numbers, reference_doctype=None, reference_name=None, content_type=None
+):
     """Send an already-built payload to role-resolved recipients.
 
     Runs as a background job: a role can resolve to dozens of people, and Meta
@@ -93,7 +95,19 @@ def send_role_notifications(notification, data, numbers, reference_doctype=None,
     Only `to` differs between recipients; the payload was built once by
     send_template_message.
     """
-    notification_doc = frappe.get_doc("WhatsApp Notification", notification)
+    try:
+        notification_doc = frappe.get_doc("WhatsApp Notification", notification)
+    except Exception:
+        frappe.log_error(
+            title=f"WhatsApp role notification: notification not found: {notification}"
+        )
+        return
+
+    # content_type lives only on the triggering instance and is never
+    # persisted, so it must be passed through explicitly for this freshly
+    # loaded doc to log it correctly.
+    if content_type:
+        notification_doc.content_type = content_type
 
     # notify() only reads doctype and name off this, so the reference is
     # rebuilt rather than carrying a whole document through the queue.
