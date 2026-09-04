@@ -352,7 +352,12 @@ class WhatsAppNotification(Document):
                 )
 
             if sent:
-                self.apply_property_after_alert(doc_data)
+                try:
+                    self.apply_property_after_alert(doc_data)
+                except Exception:
+                    frappe.log_error(
+                        title=f"WhatsApp Notification: apply_property_after_alert failed: {self.name}"
+                    )
                 frappe.msgprint(
                     "WhatsApp Message Triggered" if sent == 1
                     else f"WhatsApp Message Triggered for {sent} recipients",
