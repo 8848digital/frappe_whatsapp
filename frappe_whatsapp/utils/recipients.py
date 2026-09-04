@@ -51,27 +51,36 @@ def get_users_for_roles(roles):
     return sorted(enabled)
 
 
-def _get_employee_number(user):
-    """Cell number from the Employee linked to this user, if HRMS is installed."""
-    if not frappe.db.exists("DocType", "Employee"):
-        return None
+def _get_employee_numbers(users):
+    """Cell numbers for these Employees, batched, if HRMS is installed."""
+    if not users or not frappe.db.exists("DocType", "Employee"):
+        return {}
 
-    return frappe.db.get_value("Employee", {"user_id": user}, "cell_number")
+    return {
+        e.user_id: e.cell_number
+        for e in frappe.get_all(
+            "Employee",
+            filters={"user_id": ("in", list(users))},
+            fields=["user_id", "cell_number"],
+            ignore_permissions=True,
+        )
+    }
 
 
-def resolve_phone(user, source, user_numbers=None):
+def resolve_phone(user, source, user_numbers=None, employee_numbers=None):
     """Raw phone number for a user, following the configured source order."""
     user_number = (user_numbers or {}).get(user)
+    employee_number = (employee_numbers or {}).get(user)
 
     if source == SOURCE_USER_ONLY:
         return user_number
     if source == SOURCE_EMPLOYEE_ONLY:
-        return _get_employee_number(user)
+        return employee_number
     if source == SOURCE_EMPLOYEE_THEN_USER:
-        return _get_employee_number(user) or user_number
+        return employee_number or user_number
 
     # Default: User first, so the Employee lookup is skipped in the common case.
-    return user_number or _get_employee_number(user)
+    return user_number or employee_number
 
 
 def _matching_roles(notification, doc=None):
