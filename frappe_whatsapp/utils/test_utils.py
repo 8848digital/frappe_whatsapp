@@ -10,7 +10,9 @@ from frappe_whatsapp.utils import (
     format_number,
     get_notifications_map,
     get_whatsapp_account,
+    normalize_number,
     run_server_script_for_doc_event,
+    sanitize_param,
     trigger_whatsapp_notifications,
 )
 
@@ -26,6 +28,65 @@ class TestFormatNumber(IntegrationTestCase):
 
     def test_plus_only_at_start(self):
         self.assertEqual(format_number("+1234567890"), "1234567890")
+
+
+class TestNormalizeNumber(IntegrationTestCase):
+    """Tests for normalize_number utility."""
+
+    def test_strips_formatting(self):
+        self.assertEqual(normalize_number("+91 98765-43210"), "919876543210")
+        self.assertEqual(normalize_number("(91) 98765 43210"), "919876543210")
+
+    def test_already_normalized_unchanged(self):
+        self.assertEqual(normalize_number("919876543210"), "919876543210")
+
+    def test_adds_country_code_to_national_number(self):
+        self.assertEqual(normalize_number("9876543210", "91"), "919876543210")
+
+    def test_national_number_without_country_code_is_rejected(self):
+        # Meta rejects these, so skip rather than send a doomed request.
+        self.assertIsNone(normalize_number("9876543210"))
+
+    def test_strips_trunk_and_international_prefix(self):
+        self.assertEqual(normalize_number("09876543210", "91"), "919876543210")
+        self.assertEqual(normalize_number("00919876543210"), "919876543210")
+
+    def test_rejects_unusable_values(self):
+        for value in (None, "", "12345", "not a number", "0000"):
+            with self.subTest(value=value):
+                self.assertIsNone(normalize_number(value, "91"))
+
+    def test_rejects_over_e164_length(self):
+        self.assertIsNone(normalize_number("9" * 16))
+
+
+class TestSanitizeParam(IntegrationTestCase):
+    """Tests for sanitize_param utility."""
+
+    def test_strips_text_editor_markup(self):
+        # What Holiday.description actually yields from get_formatted().
+        self.assertEqual(
+            sanitize_param("<div class='ql-snow'>Mahatma Gandhi Jayanti</div>"),
+            "Mahatma Gandhi Jayanti",
+        )
+
+    def test_collapses_whitespace(self):
+        # Meta rejects newlines, tabs and runs of four or more spaces.
+        self.assertEqual(sanitize_param("Line one\nLine\ttwo    end"), "Line one Line two end")
+
+    def test_unescapes_entities(self):
+        self.assertEqual(sanitize_param("<p>Sales &amp; Stock</p>"), "Sales & Stock")
+
+    def test_plain_value_unchanged(self):
+        self.assertEqual(sanitize_param("REPUBLIC DAY"), "REPUBLIC DAY")
+
+    def test_none_becomes_empty_string(self):
+        self.assertEqual(sanitize_param(None), "")
+
+    def test_truncates_to_meta_limit(self):
+        result = sanitize_param("x" * 2000)
+        self.assertEqual(len(result), 1024)
+        self.assertTrue(result.endswith("..."))
 
 
 class TestGetWhatsAppAccount(IntegrationTestCase):

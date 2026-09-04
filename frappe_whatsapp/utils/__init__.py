@@ -1,7 +1,18 @@
 """Run on each event."""
+import html
+import re
+
 import frappe
 
 from frappe.core.doctype.server_script.server_script_utils import EVENT_MAP
+from frappe.utils import strip_html_tags
+
+# Shortest / longest usable international number (E.164 allows 15 digits).
+MIN_NUMBER_DIGITS = 10
+MAX_NUMBER_DIGITS = 15
+
+# Meta truncates body parameters beyond this.
+MAX_PARAM_LENGTH = 1024
 
 
 def run_server_script_for_doc_event(doc, event):
@@ -70,6 +81,55 @@ def _send_whatsapp_notification(notification_name, doctype, docname, commit=Fals
         frappe.log_error(
             title=f"WhatsApp Notification failed: {notification_name}"
         )
+
+
+def send_role_notifications(
+    notification, data, numbers, reference_doctype=None, reference_name=None, content_type=None
+):
+    """Send an already-built payload to role-resolved recipients.
+
+    Runs as a background job: a role can resolve to dozens of people, and Meta
+    rate-limits per phone number id, so a long fan-out must not block the
+    request that triggered it. Field-based notifications still send inline.
+
+    Only `to` differs between recipients; the payload was built once by
+    send_template_message.
+    """
+    try:
+        notification_doc = frappe.get_doc("WhatsApp Notification", notification)
+    except Exception:
+        frappe.log_error(
+            title=f"WhatsApp role notification: notification not found: {notification}"
+        )
+        return
+
+    # content_type lives only on the triggering instance and is never
+    # persisted, so it must be passed through explicitly for this freshly
+    # loaded doc to log it correctly.
+    if content_type:
+        notification_doc.content_type = content_type
+
+    # notify() only reads doctype and name off this, so the reference is
+    # rebuilt rather than carrying a whole document through the queue.
+    doc_data = None
+    if reference_doctype and reference_name:
+        doc_data = frappe._dict(doctype=reference_doctype, name=reference_name)
+
+    sent = 0
+    for number in numbers:
+        data["to"] = number
+        try:
+            if notification_doc.notify(data, doc_data):
+                sent += 1
+        except Exception:
+            # One bad recipient must not strand the rest of the batch.
+            frappe.log_error(
+                title=f"WhatsApp role notification failed: {notification}",
+                message=f"Recipient: {number}\n\n{frappe.get_traceback()}",
+            )
+
+    if sent and doc_data:
+        notification_doc.apply_property_after_alert(doc_data)
 
 
 def get_notifications_map():
@@ -184,3 +244,56 @@ def format_number(number):
         number = number[1 : len(number)]
 
     return number
+
+
+def normalize_number(number, default_country_code=None):
+    """Reduce a number to the digits-only form Meta expects.
+
+    Unlike format_number, which only strips a leading "+", this copes with the
+    way numbers are typed into User/Employee records: spaces, dashes, brackets,
+    a national trunk prefix, or no country code at all.
+
+    Returns None when the number cannot be used, so callers can skip the
+    recipient and log it instead of sending a request Meta will reject.
+    """
+    if not number:
+        return None
+
+    digits = re.sub(r"\D", "", str(number))
+
+    # Neither the international prefix nor the national trunk prefix are part
+    # of the number Meta wants.
+    if digits.startswith("00"):
+        digits = digits[2:]
+    elif digits.startswith("0"):
+        digits = digits.lstrip("0")
+
+    if len(digits) == MIN_NUMBER_DIGITS and default_country_code:
+        country_code = re.sub(r"\D", "", str(default_country_code))
+        digits = f"{country_code}{digits}"
+
+    # A bare national number with no country code to prepend is not dialable,
+    # so anything still at the national length is rejected rather than sent.
+    if len(digits) <= MIN_NUMBER_DIGITS or len(digits) > MAX_NUMBER_DIGITS:
+        return None
+
+    return digits
+
+
+def sanitize_param(value):
+    """Flatten a value into something Meta accepts as a template parameter.
+
+    Meta rejects parameters containing newlines, tabs or four or more
+    consecutive spaces, and renders any markup literally. Text Editor fields
+    come back from get_formatted() wrapped in HTML, so strip that first.
+    """
+    if value is None:
+        return ""
+
+    value = html.unescape(strip_html_tags(str(value)))
+    value = re.sub(r"\s+", " ", value).strip()
+
+    if len(value) > MAX_PARAM_LENGTH:
+        value = value[: MAX_PARAM_LENGTH - 3] + "..."
+
+    return value

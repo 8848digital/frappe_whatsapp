@@ -25,6 +25,8 @@
   "attach_from_field",
   "file_name",
   "whatsapp_account",
+  "recipients_section",
+  "recipients",
   "section_break_11",
   "condition",
   "column_break_12",
@@ -109,8 +111,8 @@
    "description": "Mobile number field",
    "fieldname": "field_name",
    "fieldtype": "Data",
-   "label": "Field Name",
-   "mandatory_depends_on": "eval:['DocType Event'].includes(doc.notification_type)"
+   "label": "Field Name (Phone Number)",
+   "mandatory_depends_on": "eval:['DocType Event'].includes(doc.notification_type) && !(doc.recipients && doc.recipients.length)"
   },
   {
    "fieldname": "column_break_12",
@@ -225,11 +227,23 @@
    "fieldtype": "Link",
    "label": "WhatsApp Account",
    "options": "WhatsApp Account"
+  },
+  {
+   "fieldname": "recipients_section",
+   "fieldtype": "Section Break",
+   "label": "Recipients by Role"
+  },
+  {
+   "description": "Sends to every enabled user holding these roles. Combines with Field Name: set either, or both.",
+   "fieldname": "recipients",
+   "fieldtype": "Table",
+   "label": "Recipients",
+   "options": "WhatsApp Notification Recipient"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-27 18:34:22.530859",
+ "modified": "2026-09-02 14:46:33.821117",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Notification",
