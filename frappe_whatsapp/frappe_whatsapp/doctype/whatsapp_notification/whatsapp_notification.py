@@ -348,6 +348,7 @@ class WhatsAppNotification(Document):
                     numbers=role_numbers,
                     reference_doctype=doc_data.get("doctype"),
                     reference_name=doc_data.get("name"),
+                    content_type=self.get("content_type"),
                 )
 
             if sent:
