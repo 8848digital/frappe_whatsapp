@@ -102,10 +102,16 @@ class WhatsAppNotification(Document):
                     doc = frappe.get_doc(self.reference_doctype, data.get("name"))
 
                     self.send_template_message(doc, data.get("phone_no"), template, True)
-            elif self.get("recipients"):
+            elif self.notification_type == "Scheduler Event" and self.get("recipients"):
                 # Role-based recipients with no bound document. Only templates
                 # without parameters can be filled in, so this uses the same
                 # simple path as _contact_list.
+                #
+                # The notification_type check matters: trigger_whatsapp_notifications
+                # selects on event_frequency alone, and DocType Event notifications
+                # still carry the hidden default "All". Without it, every "all"
+                # scheduler tick sent role-based DocType Event notifications here,
+                # as a parameterless template Meta rejects.
                 role_recipients, skipped = get_role_recipients(self, doc=None)
                 log_skipped(self.name, skipped)
                 self._contact_list = [
