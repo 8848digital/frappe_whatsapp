@@ -84,48 +84,59 @@ class TestGetUsersForRoles(IntegrationTestCase):
 class TestResolvePhone(IntegrationTestCase):
     """Tests for the phone-source priority setting."""
 
-    NUMBERS = {"u@example.com": "9990001111"}
+    USER = "u@example.com"
+    USER_NUMBERS = {USER: "9990001111"}
+    EMPLOYEE_NUMBERS = {USER: "8880002222"}
 
     def test_user_only_ignores_employee(self):
-        with patch(
-            "frappe_whatsapp.utils.recipients._get_employee_number", return_value="8880002222"
-        ) as emp:
-            self.assertEqual(
-                resolve_phone("u@example.com", SOURCE_USER_ONLY, self.NUMBERS), "9990001111"
-            )
-            emp.assert_not_called()
+        self.assertEqual(
+            resolve_phone(self.USER, SOURCE_USER_ONLY, self.USER_NUMBERS, self.EMPLOYEE_NUMBERS),
+            "9990001111",
+        )
 
     def test_employee_only_ignores_user(self):
-        with patch(
-            "frappe_whatsapp.utils.recipients._get_employee_number", return_value="8880002222"
-        ):
-            self.assertEqual(
-                resolve_phone("u@example.com", SOURCE_EMPLOYEE_ONLY, self.NUMBERS), "8880002222"
-            )
+        self.assertEqual(
+            resolve_phone(self.USER, SOURCE_EMPLOYEE_ONLY, self.USER_NUMBERS, self.EMPLOYEE_NUMBERS),
+            "8880002222",
+        )
 
     def test_user_then_employee_prefers_user(self):
-        with patch(
-            "frappe_whatsapp.utils.recipients._get_employee_number", return_value="8880002222"
-        ):
-            self.assertEqual(
-                resolve_phone("u@example.com", SOURCE_USER_THEN_EMPLOYEE, self.NUMBERS),
-                "9990001111",
-            )
+        self.assertEqual(
+            resolve_phone(
+                self.USER, SOURCE_USER_THEN_EMPLOYEE, self.USER_NUMBERS, self.EMPLOYEE_NUMBERS
+            ),
+            "9990001111",
+        )
 
     def test_user_then_employee_falls_back(self):
-        with patch(
-            "frappe_whatsapp.utils.recipients._get_employee_number", return_value="8880002222"
-        ):
-            self.assertEqual(
-                resolve_phone("u@example.com", SOURCE_USER_THEN_EMPLOYEE, {}), "8880002222"
-            )
+        self.assertEqual(
+            resolve_phone(self.USER, SOURCE_USER_THEN_EMPLOYEE, {}, self.EMPLOYEE_NUMBERS),
+            "8880002222",
+        )
 
     def test_employee_then_user_falls_back(self):
-        with patch("frappe_whatsapp.utils.recipients._get_employee_number", return_value=None):
-            self.assertEqual(
-                resolve_phone("u@example.com", SOURCE_EMPLOYEE_THEN_USER, self.NUMBERS),
-                "9990001111",
-            )
+        self.assertEqual(
+            resolve_phone(self.USER, SOURCE_EMPLOYEE_THEN_USER, self.USER_NUMBERS, {}),
+            "9990001111",
+        )
+
+    def test_user_only_skips_employee_lookup(self):
+        """Employee rows are not even queried when only User numbers are used."""
+        notification = frappe._dict(
+            name="_Test WA Notification",
+            recipients=[frappe._dict(receiver_by_role=ROLE)],
+        )
+        settings = frappe._dict(role_phone_source=SOURCE_USER_ONLY, default_country_code="91")
+        with patch(
+            "frappe_whatsapp.utils.recipients._get_employee_numbers"
+        ) as emp, patch(
+            "frappe_whatsapp.utils.recipients.get_users_for_roles", return_value=["u@example.com"]
+        ), patch(
+            "frappe_whatsapp.utils.recipients.frappe.get_cached_doc", return_value=settings
+        ):
+            get_role_recipients(notification)
+
+        emp.assert_not_called()
 
 
 class TestGetRoleRecipients(IntegrationTestCase):

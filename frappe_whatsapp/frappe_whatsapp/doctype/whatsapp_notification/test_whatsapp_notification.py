@@ -398,6 +398,55 @@ class TestWhatsAppNotification(IntegrationTestCase):
         result = doc.send_template_message(user)
         self.assertIsNone(result)
 
+    def test_scheduler_tick_skips_role_based_doctype_event(self):
+        """The "all" tick must not send DocType Event role notifications.
+
+        trigger_whatsapp_notifications selects on event_frequency alone, and
+        DocType Event notifications carry the hidden default "All", so this
+        path is reached every few minutes in production.
+        """
+        doc = self._make_notification(
+            notification_name="Test Notif TickSkipsDocEvent",
+            field_name="",
+            roles=["System Manager"],
+        )
+        doc.event_frequency = "All"
+
+        target = (
+            "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification"
+            ".whatsapp_notification.get_role_recipients"
+        )
+        with patch(target) as mock_roles, patch.object(doc, "send_simple_template") as mock_send:
+            doc.send_scheduled_message()
+
+        self.assertFalse(mock_roles.called)
+        self.assertFalse(mock_send.called)
+
+    def test_scheduler_tick_sends_role_based_scheduler_event(self):
+        """Genuine Scheduler Event role notifications still send."""
+        doc = self._make_notification(
+            notification_name="Test Notif TickSendsScheduler",
+            notification_type="Scheduler Event",
+            field_name="",
+            roles=["System Manager"],
+        )
+
+        target = (
+            "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification"
+            ".whatsapp_notification.get_role_recipients"
+        )
+        with patch(
+            target,
+            return_value=(
+                [{"user": "a@example.com", "full_name": "A", "phone": "919900110001"}],
+                [],
+            ),
+        ), patch.object(doc, "send_simple_template") as mock_send:
+            doc.send_scheduled_message()
+
+        self.assertTrue(mock_send.called)
+        self.assertEqual(doc._contact_list, ["919900110001"])
+
     def test_scheduler_event_notification(self):
         """Test creating a scheduler event notification."""
         doc = frappe.get_doc({
