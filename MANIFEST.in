@@ -3,15 +3,15 @@ include *.json
 include *.md
 include *.py
 include *.txt
-recursive-include whatsapp_integration *.css
-recursive-include whatsapp_integration *.csv
-recursive-include whatsapp_integration *.html
-recursive-include whatsapp_integration *.ico
-recursive-include whatsapp_integration *.js
-recursive-include whatsapp_integration *.json
-recursive-include whatsapp_integration *.md
-recursive-include whatsapp_integration *.png
-recursive-include whatsapp_integration *.py
-recursive-include whatsapp_integration *.svg
-recursive-include whatsapp_integration *.txt
-recursive-exclude whatsapp_integration *.pyc
+recursive-include frappe_whatsapp *.css
+recursive-include frappe_whatsapp *.csv
+recursive-include frappe_whatsapp *.html
+recursive-include frappe_whatsapp *.ico
+recursive-include frappe_whatsapp *.js
+recursive-include frappe_whatsapp *.json
+recursive-include frappe_whatsapp *.md
+recursive-include frappe_whatsapp *.png
+recursive-include frappe_whatsapp *.py
+recursive-include frappe_whatsapp *.svg
+recursive-include frappe_whatsapp *.txt
+recursive-exclude frappe_whatsapp *.pyc
