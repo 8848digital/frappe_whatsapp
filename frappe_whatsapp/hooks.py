@@ -114,6 +114,11 @@ app_include_js = "/assets/frappe_whatsapp/js/frappe_whatsapp.js"
 # Scheduled Tasks
 # ---------------
 
+# Show linked WhatsApp Messages in every document's timeline.
+additional_timeline_content = {
+    "*": ["frappe_whatsapp.utils.timeline.get_whatsapp_timeline"]
+}
+
 scheduler_events = {
     "all": [
         "frappe_whatsapp.utils.trigger_whatsapp_notifications_all",
