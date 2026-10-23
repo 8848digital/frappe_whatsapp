@@ -1,5 +1,5 @@
 [project]
-name = "whatsapp_integration"
+name = "frappe_whatsapp"
 authors = [
     { name = "8848 Digital LLP", email = "satya@8848digital.com"}
 ]

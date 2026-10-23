@@ -5,7 +5,7 @@ of this file, via any medium, is strictly prohibited without prior
 written permission from 8848 Digital LLP.
 -->
 
-# WhatsApp Integration
+# Frappe Whatsapp
 
 Send and receive WhatsApp messages from Frappe and ERPNext through the
 Meta WhatsApp Cloud API. You do not need a third-party gateway.
@@ -13,8 +13,8 @@ Meta WhatsApp Cloud API. You do not need a third-party gateway.
 | | |
 | --- | --- |
 | **Frappe versions** | 14, 15 and 16 |
-| **Python package** | `whatsapp_integration` |
-| **Module** | WhatsApp Integration |
+| **Python package** | `frappe_whatsapp` |
+| **Module** | Frappe Whatsapp |
 | **License** | Proprietary, 8848 Digital LLP |
 
 ## Contents
@@ -28,8 +28,7 @@ Meta WhatsApp Cloud API. You do not need a third-party gateway.
 7. [Step 5: Send a campaign (bulk messages)](#step-5-send-a-campaign-bulk-messages)
 8. [See the chat on the document (timeline)](#see-the-chat-on-the-document-timeline)
 9. [Send a template from code](#send-a-template-from-code)
-10. [Move a site from frappe_whatsapp](#move-a-site-from-frappe_whatsapp)
-11. [Development](#development)
+10. [Development](#development)
 
 ## What the app does
 
@@ -47,7 +46,7 @@ Meta WhatsApp Cloud API. You do not need a third-party gateway.
 
 ```bash
 bench get-app https://github.com/8848digital/frappe_whatsapp
-bench --site <site> install-app whatsapp_integration
+bench --site <site> install-app frappe_whatsapp
 bench --site <site> migrate
 ```
 
@@ -86,7 +85,7 @@ webhook:
 
 | Meta field | Value |
 | ---------- | ----- |
-| Callback URL | `https://<your-site>/api/method/whatsapp_integration.utils.webhook.webhook` |
+| Callback URL | `https://<your-site>/api/method/frappe_whatsapp.utils.webhook.webhook` |
 | Verify token | The **Webhook Verify Token** from step 1 |
 | Webhook fields | Subscribe to `messages` and `message_template_status_update` |
 
@@ -221,30 +220,6 @@ doc.set("_data_list", [
 To send a template without document fields, set `_contact_list`
 instead, for example `doc.set("_contact_list", ["919900000000"])`.
 
-## Move a site from frappe_whatsapp
-
-Before version 2, this app had the package name `frappe_whatsapp`. To
-move a site that has the old app:
-
-1. Get the new app on the bench, then remove the old app folder from
-   `apps/` and from `sites/apps.txt`.
-2. Run the rename once for each site, then migrate. You can run the
-   rename again safely.
-
-   ```bash
-   echo "from whatsapp_integration.setup.rename import migrate_from_frappe_whatsapp; migrate_from_frappe_whatsapp()" \
-       | bench --site <site> console
-   bench --site <site> migrate
-   bench build --app whatsapp_integration
-   ```
-
-   Use `bench console`, not `bench execute`. Frappe does not run code of
-   an app that is not installed on the site yet.
-
-The old webhook and Flow URLs (`/api/method/frappe_whatsapp...`) continue
-to work, so you do not have to change them in Meta immediately. Change
-them to the new URLs when you can.
-
 ## Development
 
 The app follows the 8848 custom app setup
@@ -255,7 +230,7 @@ The app follows the 8848 custom app setup
 Do this once in each clone, with the bench environment active:
 
 ```bash
-cd apps/whatsapp_integration
+cd apps/frappe_whatsapp
 pip install pre-commit
 pre-commit install
 ```
@@ -292,17 +267,17 @@ them in this repo. To get the latest version, run:
 scripts/sync_skills.sh
 ```
 
-The script also updates `whatsapp_integration/commands/` and
-`whatsapp_integration/utils/api_handlers/`. Do not add code to those
+The script also updates `frappe_whatsapp/commands/` and
+`frappe_whatsapp/utils/api_handlers/`. Do not add code to those
 template files, because the script overwrites them.
 
 ### Bench commands
 
 ```bash
-bench --site <site> 8848-export-fixtures --app whatsapp_integration
+bench --site <site> 8848-export-fixtures --app frappe_whatsapp
 ```
 
-This command exports the Custom Fields of the WhatsApp Integration module
+This command exports the Custom Fields of the Frappe Whatsapp module
 (the `custom_fixtures` hook).
 
 ### CodeGraph
@@ -314,7 +289,7 @@ The `.codegraph/` folder is in `.gitignore`.
 
 ```bash
 bench --site <test-site> set-config allow_tests true
-bench --site <test-site> run-tests --app whatsapp_integration
+bench --site <test-site> run-tests --app frappe_whatsapp
 ```
 
 ## License
