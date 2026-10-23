@@ -71,6 +71,11 @@ frappe.notification = {
 
 
 frappe.ui.form.on('WhatsApp Notification', {
+	setup: function(frm) {
+		frm.set_query("print_format", function() {
+			return { filters: { doc_type: frm.doc.reference_doctype } };
+		});
+	},
 	refresh: function(frm) {
 		frm.trigger("load_template")
 		frappe.notification.setup_fieldname_select(frm);

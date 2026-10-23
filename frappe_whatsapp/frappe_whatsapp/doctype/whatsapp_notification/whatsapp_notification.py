@@ -1,13 +1,14 @@
 """Notification."""
 
 import json
+from urllib.parse import urlencode
+
 import frappe
 
 from frappe import _dict, _
 from frappe.model.document import Document
 from frappe.utils.safe_exec import get_safe_globals, safe_exec
 from frappe.integrations.utils import make_post_request, make_request
-from frappe.desk.form.utils import get_pdf_link
 from frappe.utils import add_to_date, nowdate, datetime
 
 from frappe_whatsapp.utils import get_whatsapp_account, sanitize_param
@@ -62,6 +63,14 @@ class WhatsAppNotification(Document):
                 frappe.bold(_("Custom Attachment")),
                 frappe.bold(_("Attach Document Print")),
             ))
+
+        if self.print_format and self.reference_doctype:
+            print_format_doctype = frappe.db.get_value("Print Format", self.print_format, "doc_type")
+            if print_format_doctype != self.reference_doctype:
+                frappe.throw(_("Print Format {0} is not for DocType {1}").format(
+                    frappe.bold(self.print_format),
+                    frappe.bold(self.reference_doctype),
+                ))
 
         if self.custom_attachment:
             if not self.attach and not self.attach_from_field:
@@ -208,29 +217,18 @@ class WhatsAppNotification(Document):
             media = None
             if self.attach_document_print:
                 key = doc.get_document_share_key()  # noqa
-                print_format = "Standard"
-                doctype = frappe.get_doc("DocType", doc_data['doctype'])
-                if doctype.custom:
-                    if doctype.default_print_format:
-                        print_format = doctype.default_print_format
-                else:
-                    default_print_format = frappe.db.get_value(
-                        "Property Setter",
-                        filters={
-                            "doc_type": doc_data['doctype'],
-                            "property": "default_print_format"
-                        },
-                        fieldname="value"
-                    )
-                    print_format = default_print_format if default_print_format else print_format
-                link = get_pdf_link(
-                    doc_data['doctype'],
-                    doc_data['name'],
-                    print_format=print_format
-                )
+                # Values are encoded: a print format or document name with a
+                # space would otherwise give Meta a broken link.
+                query = urlencode({
+                    "doctype": doc_data['doctype'],
+                    "name": doc_data['name'],
+                    "format": self.get_print_format(doc_data['doctype']),
+                    "no_letterhead": 0,
+                    "key": key,
+                })
 
                 media = {
-                    "link": f'{frappe.utils.get_url()}{link}&key={key}',
+                    "link": f'{frappe.utils.get_url()}/api/method/frappe.utils.print_format.download_pdf?{query}',
                     "filename": f'{doc_data["name"]}.pdf',
                 }
 
@@ -425,6 +423,14 @@ class WhatsAppNotification(Document):
                 value = frappe.utils.cint(value)
 
             frappe.db.set_value(doc_data.get("doctype"), doc_data.get("name"), fieldname, value)
+
+    def get_print_format(self, doctype):
+        """Print format to attach: the one set here, else the doctype's default."""
+        if self.print_format:
+            return self.print_format
+
+        meta = frappe.get_meta(doctype)
+        return meta.default_print_format or "Standard"
 
     def get_whatsapp_account(self):
         """Account of this notification, or the default outgoing account."""

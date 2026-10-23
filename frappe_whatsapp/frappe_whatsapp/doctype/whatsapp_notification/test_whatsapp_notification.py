@@ -461,3 +461,78 @@ class TestWhatsAppNotification(IntegrationTestCase):
         doc.insert(ignore_permissions=True)
         self.assertEqual(doc.notification_type, "Scheduler Event")
         self.assertEqual(doc.event_frequency, "Daily")
+
+
+class TestNotificationPrintFormat(IntegrationTestCase):
+    """The notification can attach a chosen print format."""
+
+    def setUp(self):
+        if not frappe.db.exists("Print Format", "Test WA User Print"):
+            frappe.get_doc({
+                "doctype": "Print Format",
+                "name": "Test WA User Print",
+                "doc_type": "User",
+                "module": "Core",
+                "standard": "No",
+                "print_format_type": "Jinja",
+                "html": "<p>{{ doc.name }}</p>",
+            }).insert(ignore_permissions=True)
+
+    def tearDown(self):
+        frappe.db.rollback()
+
+    def make_notification(self, **kwargs):
+        return frappe.get_doc(dict({
+            "doctype": "WhatsApp Notification",
+            "notification_name": "Test print format notification",
+            "notification_type": "DocType Event",
+            "reference_doctype": "User",
+            "doctype_event": "On Update",
+            "field_name": "mobile_no",
+            "template": "test_notif_template-en",
+            "attach_document_print": 1,
+        }, **kwargs))
+
+    def test_explicit_print_format_is_used(self):
+        notification = self.make_notification(print_format="Test WA User Print")
+        self.assertEqual(notification.get_print_format("User"), "Test WA User Print")
+
+    def test_default_print_format_from_property_setter(self):
+        frappe.make_property_setter({
+            "doctype": "User",
+            "doctype_or_field": "DocType",
+            "property": "default_print_format",
+            "value": "Test WA User Print",
+        }, validate_fields_for_doctype=False)
+        frappe.clear_cache(doctype="User")
+        self.assertEqual(self.make_notification().get_print_format("User"), "Test WA User Print")
+
+    def test_standard_when_no_default(self):
+        frappe.db.delete("Property Setter", {"doc_type": "User", "property": "default_print_format"})
+        frappe.clear_cache(doctype="User")
+        self.assertEqual(self.make_notification().get_print_format("User"), "Standard")
+
+    def test_print_format_of_other_doctype_is_rejected(self):
+        frappe.db.set_value("Print Format", "Test WA User Print", "doc_type", "Role")
+        notification = self.make_notification(print_format="Test WA User Print")
+        with self.assertRaises(frappe.ValidationError):
+            notification.validate()
+
+    @patch("frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification.whatsapp_notification.make_post_request")
+    def test_print_link_uses_selected_format(self, mock_post):
+        frappe.db.set_value("WhatsApp Templates", "test_notif_template-en", "header_type", "DOCUMENT")
+        mock_post.return_value = {"messages": [{"id": "wamid.print_1"}]}
+        frappe.flags.integration_request = MagicMock()
+        frappe.flags.integration_request.json.return_value = mock_post.return_value
+
+        notification = self.make_notification(print_format="Test WA User Print")
+        notification.fields = []
+        user = frappe.get_doc("User", "Administrator")
+        notification.send_template_message(user, phone_no="919900000002")
+
+        sent = json.loads(mock_post.call_args.kwargs["data"])
+        header = next(c for c in sent["template"]["components"] if c["type"] == "header")
+        document = header["parameters"][0]["document"]
+        self.assertIn("format=Test+WA+User+Print", document["link"])
+        self.assertIn("&key=", document["link"])
+        self.assertEqual(document["filename"], "Administrator.pdf")
