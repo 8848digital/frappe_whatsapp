@@ -32,7 +32,9 @@ class TestSignatureMatches(unittest.TestCase):
 		self.assertTrue(signature_matches(BODY, sign(BODY), [SECRET]))
 
 	def test_uppercase_hex(self):
-		self.assertTrue(signature_matches(BODY, sign(BODY).upper().replace("SHA256=", "sha256="), [SECRET]))
+		self.assertTrue(
+			signature_matches(BODY, sign(BODY).upper().replace("SHA256=", "sha256="), [SECRET])
+		)
 
 	def test_str_body(self):
 		self.assertTrue(signature_matches(BODY.decode(), sign(BODY), [SECRET]))
@@ -56,15 +58,17 @@ class TestWebhookSignature(IntegrationTestCase):
 
 	def setUp(self):
 		if not frappe.db.exists("WhatsApp Account", ACCOUNT):
-			frappe.get_doc({
-				"doctype": "WhatsApp Account",
-				"account_name": ACCOUNT,
-				"status": "Active",
-				"url": "https://graph.facebook.com",
-				"version": "v17.0",
-				"phone_id": "signature_test_phone_id",
-				"webhook_verify_token": "signature_test_verify_token",
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "WhatsApp Account",
+					"account_name": ACCOUNT,
+					"status": "Active",
+					"url": "https://graph.facebook.com",
+					"version": "v17.0",
+					"phone_id": "signature_test_phone_id",
+					"webhook_verify_token": "signature_test_verify_token",
+				}
+			).insert(ignore_permissions=True)
 		set_encrypted_password("WhatsApp Account", ACCOUNT, "token_value", "token")
 		self.addCleanup(frappe.conf.pop, REQUIRE_SIGNED_KEY, None)
 

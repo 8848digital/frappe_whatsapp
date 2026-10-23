@@ -19,15 +19,17 @@ class TestWhatsAppTimeline(IntegrationTestCase):
 
 	def setUp(self):
 		if not frappe.db.exists("WhatsApp Account", ACCOUNT):
-			frappe.get_doc({
-				"doctype": "WhatsApp Account",
-				"account_name": ACCOUNT,
-				"status": "Active",
-				"url": "https://graph.facebook.com",
-				"version": "v17.0",
-				"phone_id": "timeline_test_phone_id",
-				"webhook_verify_token": "timeline_test_verify_token",
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "WhatsApp Account",
+					"account_name": ACCOUNT,
+					"status": "Active",
+					"url": "https://graph.facebook.com",
+					"version": "v17.0",
+					"phone_id": "timeline_test_phone_id",
+					"webhook_verify_token": "timeline_test_verify_token",
+				}
+			).insert(ignore_permissions=True)
 		self.role = frappe.get_doc({"doctype": "Role", "role_name": "Test WA Timeline Role"})
 		if not frappe.db.exists("Role", self.role.role_name):
 			self.role.insert(ignore_permissions=True)
@@ -38,16 +40,21 @@ class TestWhatsAppTimeline(IntegrationTestCase):
 
 	def add_message(self, message, msg_type="Incoming", **kwargs):
 		# Incoming messages are not sent to Meta, so no API call is made.
-		return frappe.get_doc(dict({
-			"doctype": "WhatsApp Message",
-			"type": msg_type,
-			"from": "919900000003",
-			"message": message,
-			"content_type": "text",
-			"reference_doctype": "Role",
-			"reference_name": self.role.name,
-			"whatsapp_account": ACCOUNT,
-		}, **kwargs)).insert(ignore_permissions=True)
+		return frappe.get_doc(
+			dict(
+				{
+					"doctype": "WhatsApp Message",
+					"type": msg_type,
+					"from": "919900000003",
+					"message": message,
+					"content_type": "text",
+					"reference_doctype": "Role",
+					"reference_name": self.role.name,
+					"whatsapp_account": ACCOUNT,
+				},
+				**kwargs
+			)
+		).insert(ignore_permissions=True)
 
 	def test_linked_messages_are_returned_newest_first(self):
 		first = self.add_message("first")
@@ -98,4 +105,3 @@ class TestWhatsAppTimeline(IntegrationTestCase):
 	def test_whatsapp_message_form_is_skipped(self):
 		message = self.add_message("self")
 		self.assertEqual(get_whatsapp_timeline("WhatsApp Message", message.name), [])
-

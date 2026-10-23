@@ -25,9 +25,10 @@ Rules:
 import hashlib
 import hmac
 
+from werkzeug.wrappers import Response
+
 import frappe
 from frappe.utils.password import get_decrypted_password
-from werkzeug.wrappers import Response
 
 SIGNATURE_HEADER = "X-Hub-Signature-256"
 SIGNATURE_PREFIX = "sha256="
@@ -39,7 +40,7 @@ def signature_matches(body, header, secrets):
 	if not header or not header.startswith(SIGNATURE_PREFIX):
 		return False
 
-	received = header[len(SIGNATURE_PREFIX):].strip().lower()
+	received = header[len(SIGNATURE_PREFIX) :].strip().lower()
 	if isinstance(body, str):
 		body = body.encode()
 

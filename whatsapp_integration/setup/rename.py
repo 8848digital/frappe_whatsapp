@@ -78,6 +78,6 @@ def rename_method_paths():
 			.run(as_dict=True)
 		)
 		for row in rows:
-			new_value = new_prefix + row[field][len(old_prefix):]
+			new_value = new_prefix + row[field][len(old_prefix) :]
 			new_value = new_value.replace(f".{OLD_APP}.", f".{NEW_APP}.")
 			frappe.qb.update(table).set(column, new_value).where(table.name == row.name).run()

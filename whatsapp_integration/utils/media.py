@@ -15,8 +15,9 @@ only later as "Unable to upload the media". Uploading the file to
 import mimetypes
 from urllib.parse import unquote, urlparse
 
-import frappe
 import requests
+
+import frappe
 from frappe import _
 
 
@@ -47,7 +48,7 @@ def get_local_file(file_url):
 	path = file_url
 	site_url = frappe.utils.get_url()
 	if path.startswith(site_url):
-		path = path[len(site_url):]
+		path = path[len(site_url) :]
 	elif path.startswith(("http://", "https://")):
 		return None
 
