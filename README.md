@@ -115,20 +115,89 @@ move a site that has the old app:
 
 1. Get the new app on the bench, then remove the old app folder from
    `apps/` and from `sites/apps.txt`.
-2. Run the rename once for each site, then migrate. The command is safe
-   to run again.
+2. Run the rename once for each site, then migrate. You can run the
+   rename again safely.
 
    ```bash
-   bench --site <site> migrate-from-frappe-whatsapp
+   echo "from whatsapp_integration.setup.rename import migrate_from_frappe_whatsapp; migrate_from_frappe_whatsapp()" \
+       | bench --site <site> console
    bench --site <site> migrate
    bench build --app whatsapp_integration
    ```
+
+   Use `bench console`, not `bench execute`. Frappe does not run code of
+   an app that is not installed on the site yet.
 
 The old webhook and Flow URLs (`/api/method/frappe_whatsapp...`) continue
 to work, so you do not have to change them in Meta immediately. Change
 them to the new URLs when you can.
 
-## Tests
+## Development
+
+The app follows the 8848 custom app setup
+([custom_app_setup.md](https://github.com/8848digital/skills/blob/8848-skills/project_base_template/custom_app_setup.md)).
+
+### Set up pre-commit
+
+Do this once in each clone, with the bench environment active:
+
+```bash
+cd apps/whatsapp_integration
+pip install pre-commit
+pre-commit install
+```
+
+Each commit then runs these checks on the changed files:
+
+| Check | Configuration |
+| ----- | ------------- |
+| black, isort, ruff settings | `pyproject.toml` |
+| flake8 | `.flake8` |
+| eslint, prettier | `.eslintrc` |
+| Maximum 250 lines in a Python file | `scripts/check_max_lines.py` |
+| No direct commits to `master` or `develop` | `.pre-commit-config.yaml` |
+
+To check all files, run `pre-commit run --all-files`.
+
+> **Note:** Some existing files are longer than 250 lines. If you change
+> one of them, split it or move code out before you commit.
+
+### Commit messages
+
+Use conventional commits, for example `feat: ...`, `fix: ...` or
+`chore: ...`. The allowed types are in `commitlint.config.js`. The
+**Linters** workflow checks the commit messages of each pull request. It
+also runs the Frappe Semgrep rules and `pip-audit`.
+
+### Agent skills
+
+`.claude/skills/` and `CLAUDE.md` come from
+[8848digital/skills](https://github.com/8848digital/skills). Do not edit
+them in this repo. To get the latest version, run:
+
+```bash
+scripts/sync_skills.sh
+```
+
+The script also updates `whatsapp_integration/commands/` and
+`whatsapp_integration/utils/api_handlers/`. Do not add code to those
+template files, because the script overwrites them.
+
+### Bench commands
+
+```bash
+bench --site <site> 8848-export-fixtures --app whatsapp_integration
+```
+
+This command exports the Custom Fields of the WhatsApp Integration module
+(the `custom_fixtures` hook).
+
+### CodeGraph
+
+To build the local code index, run `codegraph install` in the app folder.
+The `.codegraph/` folder is in `.gitignore`.
+
+### Tests
 
 ```bash
 bench --site <test-site> set-config allow_tests true

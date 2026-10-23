@@ -29,8 +29,16 @@ def get_whatsapp_timeline(doctype, docname):
 		"WhatsApp Message",
 		filters={"reference_doctype": doctype, "reference_name": docname},
 		fields=[
-			"name", "type", "to", "from", "message", "content_type",
-			"template", "status", "creation", "owner",
+			"name",
+			"type",
+			"to",
+			"from",
+			"message",
+			"content_type",
+			"template",
+			"status",
+			"creation",
+			"owner",
 		],
 		order_by="creation desc",
 		limit=TIMELINE_LIMIT,
@@ -52,7 +60,9 @@ def get_timeline_item(message):
 			text = text[:MAX_PREVIEW_LENGTH] + "…"
 		body = escape_html(text) or escape_html(message.content_type or "")
 
-	status = f' · <span class="text-muted">{escape_html(message.status)}</span>' if message.status else ""
+	status = (
+		f' · <span class="text-muted">{escape_html(message.status)}</span>' if message.status else ""
+	)
 	link = frappe.utils.get_link_to_form("WhatsApp Message", message.name, title)
 
 	return {
