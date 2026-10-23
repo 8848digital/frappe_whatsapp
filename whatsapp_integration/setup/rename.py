@@ -7,41 +7,24 @@
 
 Run once per site, after the new app is on the bench and before ``migrate``::
 
-    bench --site <site> migrate-from-frappe-whatsapp
+    echo "from whatsapp_integration.setup.rename import migrate_from_frappe_whatsapp; migrate_from_frappe_whatsapp()" \
+        | bench --site <site> console
     bench --site <site> migrate
 
-This is a bench command, not ``bench execute``: Frappe does not run code of
-an app that the site does not have installed yet. The command is safe to run
-again: when nothing is left to rename, it does nothing.
+``bench execute`` cannot run it: Frappe does not run code of an app that the
+site does not have installed yet. It is not a bench command either, because
+``commands/__init__.py`` is overwritten by ``scripts/sync_skills.sh``. It is
+safe to run again: when nothing is left to rename, it does nothing.
 """
 
 import json
 
-import click
 import frappe
-from frappe.commands import pass_context
-from frappe.exceptions import SiteNotSpecifiedError
 
 OLD_APP = "frappe_whatsapp"
 NEW_APP = "whatsapp_integration"
 OLD_MODULE = "Frappe Whatsapp"
 NEW_MODULE = "WhatsApp Integration"
-
-
-@click.command("migrate-from-frappe-whatsapp")
-@pass_context
-def migrate_from_frappe_whatsapp_command(context):
-	"""Rename frappe_whatsapp to whatsapp_integration in the site database."""
-	if not context.sites:
-		raise SiteNotSpecifiedError
-
-	for site in context.sites:
-		try:
-			frappe.init(site=site)
-			frappe.connect()
-			migrate_from_frappe_whatsapp()
-		finally:
-			frappe.destroy()
 
 
 def migrate_from_frappe_whatsapp():
