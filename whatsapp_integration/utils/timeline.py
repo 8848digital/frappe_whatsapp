@@ -66,7 +66,7 @@ def get_timeline_item(message):
 	link = frappe.utils.get_link_to_form("WhatsApp Message", message.name, title)
 
 	return {
-		"icon": "message",
+		"icon": "small-message",
 		"is_card": True,
 		"creation": message.creation,
 		"content": f"<div>{link}{status}</div><div class='text-muted small'>{body}</div>",

@@ -67,7 +67,7 @@ class TestWhatsAppTimeline(IntegrationTestCase):
 		self.assertIn(second.name, items[0]["content"])
 		self.assertIn("second", items[0]["content"])
 		self.assertTrue(items[0]["is_card"])
-		self.assertEqual(items[0]["icon"], "message")
+		self.assertEqual(items[0]["icon"], "small-message")
 
 	def test_hook_is_registered(self):
 		message = self.add_message("from hook")
