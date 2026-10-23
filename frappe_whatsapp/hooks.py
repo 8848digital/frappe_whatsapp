@@ -1,11 +1,25 @@
+# Copyright (c) 2026 8848 Digital LLP. All rights reserved.
+# Proprietary and confidential. Unauthorized copying, distribution, or use
+# of this file, via any medium, is strictly prohibited without prior
+# written permission from 8848 Digital LLP.
+
 from . import __version__ as app_version
 
 app_name = "frappe_whatsapp"
 app_title = "Frappe Whatsapp"
-app_publisher = "Shridhar Patil"
-app_description = "WhatsApp integration for frappe"
-app_email = "shridhar.p@zerodha.com"
-app_license = "MIT"
+app_publisher = "8848 Digital LLP"
+app_description = "Send and receive WhatsApp messages from Frappe through the Meta Cloud API"
+app_email = "satya@8848digital.com"
+app_license = "Proprietary"
+
+custom_fixtures = [
+    {
+        "dt": "Custom Field",
+        "filters": {"module": ["in", ["Frappe Whatsapp"]]},
+    }
+]
+
+commands = ["frappe_whatsapp.commands.export_fixtures.export_fixtures"]
 
 # Includes in <head>
 # ------------------
@@ -64,7 +78,7 @@ app_include_js = "/assets/frappe_whatsapp/js/frappe_whatsapp.js"
 # Installation
 # ------------
 
-#before_install = "frappe_whatsapp.install.before_install"
+# before_install = "frappe_whatsapp.install.before_install"
 # after_install = "frappe_whatsapp.install.after_install"
 
 # Uninstallation
@@ -114,9 +128,15 @@ app_include_js = "/assets/frappe_whatsapp/js/frappe_whatsapp.js"
 # Scheduled Tasks
 # ---------------
 
+# Show linked WhatsApp Messages in every document's timeline.
+additional_timeline_content = {
+    "*": ["frappe_whatsapp.utils.timeline.get_whatsapp_timeline"]
+}
+
 scheduler_events = {
     "all": [
-        "frappe_whatsapp.utils.trigger_whatsapp_notifications_all"
+        "frappe_whatsapp.utils.trigger_whatsapp_notifications_all",
+        "frappe_whatsapp.utils.bulk_messaging.process_scheduled_bulk_messages"
     ],
     "hourly": [
         "frappe_whatsapp.utils.trigger_whatsapp_notifications_hourly"

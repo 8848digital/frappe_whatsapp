@@ -1,16 +1,30 @@
+# Copyright (c) 2026 8848 Digital LLP. All rights reserved.
+# Proprietary and confidential. Unauthorized copying, distribution, or use
+# of this file, via any medium, is strictly prohibited without prior
+# written permission from 8848 Digital LLP.
+
 """Notification."""
 
 import json
+from urllib.parse import urlencode
+
 import frappe
 
 from frappe import _dict, _
 from frappe.model.document import Document
 from frappe.utils.safe_exec import get_safe_globals, safe_exec
-from frappe.integrations.utils import make_post_request
-from frappe.desk.form.utils import get_pdf_link
+from frappe.integrations.utils import make_post_request, make_request
 from frappe.utils import add_to_date, nowdate, datetime
 
-from frappe_whatsapp.utils import get_whatsapp_account
+from frappe_whatsapp.utils import get_whatsapp_account, sanitize_param
+from frappe_whatsapp.utils.media import get_media_object
+from frappe_whatsapp.utils.recipients import get_role_recipients, log_skipped
+
+
+def _dedupe(numbers):
+    """Keep order, drop blanks and duplicates."""
+    seen = set()
+    return [n for n in numbers if n and not (n in seen or seen.add(n))]
 
 
 class WhatsAppNotification(Document):
@@ -19,14 +33,50 @@ class WhatsAppNotification(Document):
     def validate(self):
         """Validate."""
         if self.notification_type == "DocType Event":
-            fields = frappe.get_doc("DocType", self.reference_doctype).fields
-            fields += frappe.get_all(
-                "Custom Field",
-                filters={"dt": self.reference_doctype},
-                fields=["fieldname"]
-            )
-            if not any(field.fieldname == self.field_name for field in fields): # noqa
-                frappe.throw(_("Field name {0} does not exists").format(self.field_name))
+            if self.field_name:
+                fields = frappe.get_doc("DocType", self.reference_doctype).fields
+                fields += frappe.get_all(
+                    "Custom Field",
+                    filters={"dt": self.reference_doctype},
+                    fields=["fieldname"]
+                )
+                if not any(field.fieldname == self.field_name for field in fields): # noqa
+                    frappe.throw(_("Field name {0} does not exists").format(self.field_name))
+            elif not self.get("recipients"):
+                frappe.throw(_("Set a {0} or add at least one role under {1}").format(
+                    frappe.bold(_("Field Name (Phone Number)")),
+                    frappe.bold(_("Recipients by Role")),
+                ))
+
+        for field in self.fields:
+            if "," in (field.field_name or ""):
+                # Core Frappe's "fieldname,parentfield" syntax resolves to an
+                # empty string here, which sends a message with a hole in it.
+                frappe.msgprint(
+                    _("Child table field {0} is not supported and will send an empty value. "
+                      "Set Reference Document Type to the child doctype instead.").format(
+                        frappe.bold(field.field_name)
+                    ),
+                    indicator="orange",
+                    alert=True,
+                )
+        if self.get("recipients") and (self.custom_attachment or self.attach_document_print):
+            frappe.throw(_(
+                "Recipients by Role cannot be combined with {0} or {1}: the same "
+                "private-file link would be sent to everyone holding the role."
+            ).format(
+                frappe.bold(_("Custom Attachment")),
+                frappe.bold(_("Attach Document Print")),
+            ))
+
+        if self.print_format and self.reference_doctype:
+            print_format_doctype = frappe.db.get_value("Print Format", self.print_format, "doc_type")
+            if print_format_doctype != self.reference_doctype:
+                frappe.throw(_("Print Format {0} is not for DocType {1}").format(
+                    frappe.bold(self.print_format),
+                    frappe.bold(self.reference_doctype),
+                ))
+
         if self.custom_attachment:
             if not self.attach and not self.attach_from_field:
                 frappe.throw(_("Either {0} a file or add a {1} to send attachemt").format(
@@ -45,9 +95,11 @@ class WhatsAppNotification(Document):
 
     def send_scheduled_message(self) -> dict:
         """Specific to API endpoint Server Scripts."""
-        safe_exec(  # nosemgrep: frappe-codeinjection-eval -- safe_exec is Frappe's sandboxed eval; condition is admin-write-gated
-            self.condition, get_safe_globals(), dict(doc=self)
-        )
+        if self.condition:
+            # A roles-only scheduled notification has no script to run.
+            safe_exec(  # nosemgrep: frappe-codeinjection-eval -- safe_exec is Frappe's sandboxed eval; condition is admin-write-gated
+                self.condition, get_safe_globals(), dict(doc=self)
+            )
 
         template = frappe.db.get_value(
             "WhatsApp Templates", self.template,
@@ -65,6 +117,23 @@ class WhatsAppNotification(Document):
                     doc = frappe.get_doc(self.reference_doctype, data.get("name"))
 
                     self.send_template_message(doc, data.get("phone_no"), template, True)
+            elif self.notification_type == "Scheduler Event" and self.get("recipients"):
+                # Role-based recipients with no bound document. Only templates
+                # without parameters can be filled in, so this uses the same
+                # simple path as _contact_list.
+                #
+                # The notification_type check matters: trigger_whatsapp_notifications
+                # selects on event_frequency alone, and DocType Event notifications
+                # still carry the hidden default "All". Without it, every "all"
+                # scheduler tick sent role-based DocType Event notifications here,
+                # as a parameterless template Meta rejects.
+                role_recipients, skipped = get_role_recipients(self, doc=None)
+                log_skipped(self.name, skipped)
+                self._contact_list = [
+                    recipient["phone"] for recipient in role_recipients
+                ]
+                if self._contact_list:
+                    self.send_simple_template(template)
         # return _globals.frappe.flags
 
 
@@ -103,14 +172,14 @@ class WhatsAppNotification(Document):
         template = default_template or frappe.get_doc("WhatsApp Templates", self.template)
 
         if template:
-            if self.field_name:
-                phone_number = phone_no or doc_data[self.field_name]
-            else:
-                phone_number = phone_no
+            inline_numbers, role_numbers = self.get_recipients(doc, doc_data, phone_no)
+            if not inline_numbers and not role_numbers:
+                return
 
             data = {
                 "messaging_product": "whatsapp",
-                "to": self.format_number(phone_number),
+                # Set per recipient when sending, below.
+                "to": None,
                 "type": "template",
                 "template": {
                     "name": template.actual_name,
@@ -133,6 +202,13 @@ class WhatsAppNotification(Document):
                         if isinstance(doc_data[field.field_name], (datetime.date, datetime.datetime)):
                             value = str(doc_data[field.field_name])
 
+                    if self.get("recipients"):
+                        # Role-based notifications commonly map Text Editor
+                        # fields, which get_formatted wraps in HTML that Meta
+                        # would render literally. Scoped to the new path so
+                        # existing notifications send exactly as before.
+                        value = sanitize_param(value)
+
                     parameters.append({
                         "type": "text",
                         "text": value
@@ -143,68 +219,54 @@ class WhatsAppNotification(Document):
                     "parameters": parameters
                 }]
 
+            media = None
             if self.attach_document_print:
                 key = doc.get_document_share_key()  # noqa
-                print_format = "Standard"
-                doctype = frappe.get_doc("DocType", doc_data['doctype'])
-                if doctype.custom:
-                    if doctype.default_print_format:
-                        print_format = doctype.default_print_format
-                else:
-                    default_print_format = frappe.db.get_value(
-                        "Property Setter",
-                        filters={
-                            "doc_type": doc_data['doctype'],
-                            "property": "default_print_format"
-                        },
-                        fieldname="value"
-                    )
-                    print_format = default_print_format if default_print_format else print_format
-                link = get_pdf_link(
-                    doc_data['doctype'],
-                    doc_data['name'],
-                    print_format=print_format
-                )
+                # Values are encoded: a print format or document name with a
+                # space would otherwise give Meta a broken link.
+                query = urlencode({
+                    "doctype": doc_data['doctype'],
+                    "name": doc_data['name'],
+                    "format": self.get_print_format(doc_data['doctype']),
+                    "no_letterhead": 0,
+                    "key": key,
+                })
 
-                filename = f'{doc_data["name"]}.pdf'
-                url = f'{frappe.utils.get_url()}{link}&key={key}'
+                media = {
+                    "link": f'{frappe.utils.get_url()}/api/method/frappe.utils.print_format.download_pdf?{query}',
+                    "filename": f'{doc_data["name"]}.pdf',
+                }
 
             elif self.custom_attachment:
-                filename = self.file_name
-
                 if self.attach_from_field:
-                    file_url = doc_data[self.attach_from_field]
-                    if not file_url.startswith("http"):
-                        # get share key so that private files can be sent
-                        key = doc.get_document_share_key()
-                        file_url = f'{frappe.utils.get_url()}{file_url}&key={key}'
+                    file_url = doc_data.get(self.attach_from_field)
                 else:
                     file_url = self.attach
 
-                if file_url.startswith("http"):
-                    url = f'{file_url}'
-                else:
-                    url = f'{frappe.utils.get_url()}{file_url}'
+                if file_url:
+                    # Upload the file to Meta: a link to a private file, or to
+                    # a site Meta cannot reach, fails with "Unable to upload
+                    # the media" after Meta has already accepted the send.
+                    media = get_media_object(
+                        self.get_whatsapp_account(), file_url, self.file_name
+                    )
 
-            if template.header_type == 'DOCUMENT':
+            if media and template.header_type == 'DOCUMENT':
                 data['template']['components'].append({
                     "type": "header",
                     "parameters": [{
                         "type": "document",
-                        "document": {
-                            "link": url,
-                            "filename": filename
-                        }
+                        "document": media
                     }]
                 })
-            elif template.header_type == 'IMAGE':
+            elif media and template.header_type in ('IMAGE', 'VIDEO'):
+                media_type = template.header_type.lower()
+                media.pop("filename", None)
                 data['template']['components'].append({
                     "type": "header",
                     "parameters": [{
-                        "type": "image",
-                        "image": {
-                            "link": url
-                        }
+                        "type": media_type,
+                        media_type: media
                     }]
                 })
             self.content_type = template.header_type.lower() if template.header_type else None
@@ -212,7 +274,35 @@ class WhatsAppNotification(Document):
             if template.buttons:
                 button_fields = self.button_fields.split(",") if self.button_fields else []
                 for idx, btn in enumerate(template.buttons):
-                    if btn.button_type == "Visit Website" and btn.url_type == "Dynamic":
+
+                    # FIX: OTP copy-code button — Meta requires a button component
+                    # with sub_type=url and the OTP code as the parameter.
+                    # The OTP value comes from the first body parameter (parameters[0]).
+                    is_otp_button = (
+                        btn.button_type == "Visit Website"
+                        and "otp_type=COPY_CODE" in (btn.website_url or "")
+                    )
+                    if is_otp_button:
+                        # Extract the OTP value from the body parameters already built above
+                        otp_value = None
+                        body_components = [
+                            c for c in data['template']['components']
+                            if c.get("type") == "body"
+                        ]
+                        if body_components and body_components[0].get("parameters"):
+                            otp_value = body_components[0]["parameters"][0].get("text")
+
+                        if otp_value:
+                            data['template']['components'].append({
+                                "type": "button",
+                                "sub_type": "url",
+                                "index": str(idx),
+                                "parameters": [
+                                    {"type": "text", "text": str(otp_value)}
+                                ]
+                            })
+
+                    elif btn.button_type == "Visit Website" and btn.url_type == "Dynamic":
                         if button_fields:
                             data['template']['components'].append({
                                 "type": "button",
@@ -244,12 +334,111 @@ class WhatsAppNotification(Document):
                                 ]
                             })
 
+            # The payload is built once; only the recipient and the request
+            # itself repeat.
+            sent = 0
+            for number in inline_numbers:
+                data["to"] = number
+                if self.notify(data, doc_data):
+                    sent += 1
 
-            self.notify(data, doc_data)
+            if role_numbers:
+                # A role can resolve to dozens of people and Meta rate-limits
+                # per phone number id, so role sends run outside the request.
+                # Field-based sends stay inline, exactly as before.
+                frappe.enqueue(
+                    "frappe_whatsapp.utils.send_role_notifications",
+                    queue="long",
+                    enqueue_after_commit=True,
+                    notification=self.name,
+                    data=dict(data, to=None),
+                    numbers=role_numbers,
+                    reference_doctype=doc_data.get("doctype"),
+                    reference_name=doc_data.get("name"),
+                    content_type=self.get("content_type"),
+                )
 
-    def notify(self, data, doc_data=None):
-        """Notify."""
-        # Use notification WhatsApp account if available, otherwise use a default outgoing account
+            if sent:
+                try:
+                    self.apply_property_after_alert(doc_data)
+                except Exception:
+                    frappe.log_error(
+                        title=f"WhatsApp Notification: apply_property_after_alert failed: {self.name}"
+                    )
+                frappe.msgprint(
+                    "WhatsApp Message Triggered" if sent == 1
+                    else f"WhatsApp Message Triggered for {sent} recipients",
+                    indicator="green",
+                    alert=True
+                )
+            elif role_numbers:
+                frappe.msgprint(
+                    f"WhatsApp message queued for {len(role_numbers)} recipients",
+                    indicator="green",
+                    alert=True
+                )
+
+    def get_recipients(self, doc, doc_data, phone_no=None):
+        """Numbers this notification should be sent to.
+
+        Returns (inline_numbers, role_numbers). Field-based numbers are sent
+        inline, preserving existing behaviour; role-based numbers can fan out
+        to many people and are handed to a background job by the caller.
+
+        An explicit phone_no is the only recipient: the _data_list scheduler
+        path enumerates its own recipients per row, so also unioning roles
+        there would multiply sends by the number of rows.
+        """
+        if phone_no:
+            return [self.format_number(phone_no)], []
+
+        inline_numbers = []
+        if self.field_name:
+            field_number = doc_data.get(self.field_name)
+            if field_number:
+                inline_numbers.append(self.format_number(field_number))
+
+        role_numbers = []
+        if self.get("recipients"):
+            role_recipients, skipped = get_role_recipients(self, doc)
+            role_numbers = [recipient["phone"] for recipient in role_recipients]
+            log_skipped(self.name, skipped)
+
+        inline_numbers = _dedupe(inline_numbers)
+        # A number already covered inline must not be messaged twice.
+        already_sent = set(inline_numbers)
+        role_numbers = [n for n in _dedupe(role_numbers) if n not in already_sent]
+
+        return inline_numbers, role_numbers
+
+    def apply_property_after_alert(self, doc_data):
+        """Set the configured field on the reference document, once per run."""
+        if not (doc_data and self.set_property_after_alert and self.property_value):
+            return
+
+        if not (doc_data.get("doctype") and doc_data.get("name")):
+            return
+
+        fieldname = self.set_property_after_alert
+        value = self.property_value
+        meta = frappe.get_meta(doc_data.get("doctype"))
+        df = meta.get_field(fieldname)
+        if df:
+            if df.fieldtype in frappe.model.numeric_fieldtypes:
+                value = frappe.utils.cint(value)
+
+            frappe.db.set_value(doc_data.get("doctype"), doc_data.get("name"), fieldname, value)
+
+    def get_print_format(self, doctype):
+        """Print format to attach: the one set here, else the doctype's default."""
+        if self.print_format:
+            return self.print_format
+
+        meta = frappe.get_meta(doctype)
+        return meta.default_print_format or "Standard"
+
+    def get_whatsapp_account(self):
+        """Account of this notification, or the default outgoing account."""
         if self.whatsapp_account:
             whatsapp_account = frappe.get_doc("WhatsApp Account", self.whatsapp_account)
         else:
@@ -257,7 +446,11 @@ class WhatsAppNotification(Document):
 
         if not whatsapp_account:
             frappe.throw(_("Please set a default outgoing WhatsApp Account"))
+        return whatsapp_account
 
+    def notify(self, data, doc_data=None):
+        """Notify."""
+        whatsapp_account = self.get_whatsapp_account()
         token = whatsapp_account.get_password("token")
 
         headers = {
@@ -301,19 +494,8 @@ class WhatsAppNotification(Document):
 
             frappe.get_doc(new_doc).save(ignore_permissions=True)
 
-            if doc_data and self.set_property_after_alert and self.property_value:
-                if doc_data.doctype and doc_data.name:
-                    fieldname = self.set_property_after_alert
-                    value = self.property_value
-                    meta = frappe.get_meta(doc_data.get("doctype"))
-                    df = meta.get_field(fieldname)
-                    if df:
-                        if df.fieldtype in frappe.model.numeric_fieldtypes:
-                            value = frappe.utils.cint(value)
-
-                        frappe.db.set_value(doc_data.get("doctype"), doc_data.get("name"), fieldname, value)
-
-            frappe.msgprint("WhatsApp Message Triggered", indicator="green", alert=True)
+            # set_property_after_alert and the confirmation message are applied
+            # once by the caller, not once per recipient.
             success = True
 
         except Exception as e:
@@ -339,6 +521,12 @@ class WhatsAppNotification(Document):
                 "meta_data": meta
             }).insert(ignore_permissions=True)
 
+        return success
+
+
+    def on_update(self):
+        """Rebuild the doctype/event map so the change applies at once."""
+        frappe.cache().delete_value("whatsapp_notification_map")
 
     def on_trash(self):
         """On delete remove from schedule."""
@@ -405,4 +593,3 @@ def trigger_notifications(method="daily"):
         for d in doc_list:
             alert = frappe.get_doc("WhatsApp Notification", d.name)
             alert.get_documents_for_today()
-           

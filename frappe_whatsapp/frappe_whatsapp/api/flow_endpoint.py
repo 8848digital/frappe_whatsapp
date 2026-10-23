@@ -1,11 +1,15 @@
-# Copyright (c) 2025, Shridhar Patil and contributors
-# For license information, please see license.txt
+# Copyright (c) 2026 8848 Digital LLP. All rights reserved.
+# Proprietary and confidential. Unauthorized copying, distribution, or use
+# of this file, via any medium, is strictly prohibited without prior
+# written permission from 8848 Digital LLP.
 
 import json
 import hashlib
 import hmac
 import frappe
 from frappe import _
+
+from frappe_whatsapp.utils.signature import forbidden, is_verified_meta_request
 
 
 @frappe.whitelist(allow_guest=True)
@@ -25,7 +29,10 @@ def handle_flow_request():
             # Health check - WhatsApp pings this to verify endpoint
             return {"status": "ok"}
 
-        # POST request - actual flow data
+        # POST request - actual flow data. Refuse unsigned requests
+        # before anything is logged or saved.
+        if not is_verified_meta_request():
+            return forbidden()
         data = frappe.request.get_json()
 
         if not data:

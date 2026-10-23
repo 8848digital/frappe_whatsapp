@@ -8,7 +8,10 @@
  "field_order": [
   "default_incoming_account",
   "column_break_xsuw",
-  "default_outgoing_account"
+  "default_outgoing_account",
+  "role_recipient_section",
+  "role_phone_source",
+  "default_country_code"
  ],
  "fields": [
   {
@@ -26,13 +29,33 @@
   {
    "fieldname": "column_break_skjo",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "role_recipient_section",
+   "fieldtype": "Section Break",
+   "label": "Role Recipient Settings"
+  },
+  {
+   "default": "User Mobile No, then Employee",
+   "description": "How to resolve a phone number for users matched by role.",
+   "fieldname": "role_phone_source",
+   "fieldtype": "Select",
+   "label": "Phone Number Source",
+   "options": "User Mobile No, then Employee\nEmployee, then User Mobile No\nUser Mobile No\nEmployee Cell Number"
+  },
+  {
+   "default": "91",
+   "description": "Prepended to numbers stored without a country code. User.mobile_no is usually 10 digits in India; WhatsApp requires the country code.",
+   "fieldname": "default_country_code",
+   "fieldtype": "Data",
+   "label": "Default Country Code"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-12-01 13:22:14.262545",
+ "modified": "2026-09-02 14:46:33.821117",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Settings",
