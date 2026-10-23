@@ -1,5 +1,7 @@
-# Copyright (c) 2022, Shridhar Patil and Contributors
-# See license.txt
+# Copyright (c) 2026 8848 Digital LLP. All rights reserved.
+# Proprietary and confidential. Unauthorized copying, distribution, or use
+# of this file, via any medium, is strictly prohibited without prior
+# written permission from 8848 Digital LLP.
 
 import json
 from unittest.mock import patch, MagicMock
@@ -88,6 +90,8 @@ class TestWhatsAppNotification(IntegrationTestCase):
         if kwargs.get("fields"):
             for f in kwargs["fields"]:
                 doc.append("fields", {"field_name": f})
+        for role in kwargs.get("roles", []):
+            doc.append("recipients", {"receiver_by_role": role})
         doc.insert(ignore_permissions=True)
         return doc
 
@@ -148,6 +152,148 @@ class TestWhatsAppNotification(IntegrationTestCase):
                 "set_property_after_alert": "nonexistent_field_abc",
             })
             doc.insert(ignore_permissions=True)
+
+    def test_field_name_optional_when_roles_set(self):
+        """A roles-only notification can be saved."""
+        doc = self._make_notification(
+            notification_name="Test Notif RolesOnly",
+            field_name="",
+            roles=["System Manager"],
+        )
+        self.assertTrue(frappe.db.exists("WhatsApp Notification", doc.name))
+
+    def test_neither_field_name_nor_roles_is_rejected(self):
+        """Without a field or a role there is nobody to send to."""
+        with self.assertRaises(frappe.ValidationError):
+            self._make_notification(
+                notification_name="Test Notif NoRecipient",
+                field_name="",
+            )
+
+    def test_get_recipients_uses_field_name(self):
+        """Existing single-field behaviour is unchanged."""
+        doc = self._make_notification(notification_name="Test Notif RecipField")
+        user = frappe.get_doc("User", "Administrator")
+        user.mobile_no = "919900112233"
+
+        self.assertEqual(
+            doc.get_recipients(user, user.as_dict()), (["919900112233"], [])
+        )
+
+    def test_get_recipients_explicit_phone_wins(self):
+        """An explicit phone_no is the only recipient."""
+        doc = self._make_notification(
+            notification_name="Test Notif RecipExplicit",
+            roles=["System Manager"],
+        )
+        user = frappe.get_doc("User", "Administrator")
+        user.mobile_no = "919900112233"
+
+        self.assertEqual(
+            doc.get_recipients(user, user.as_dict(), phone_no="919900110000"),
+            (["919900110000"], []),
+        )
+
+    def test_get_recipients_separates_field_from_roles(self):
+        """Field number sends inline; role numbers are returned separately."""
+        doc = self._make_notification(
+            notification_name="Test Notif RecipMerge",
+            roles=["System Manager"],
+        )
+        user = frappe.get_doc("User", "Administrator")
+        user.mobile_no = "919900112233"
+
+        with patch(
+            "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification"
+            ".whatsapp_notification.get_role_recipients",
+            return_value=(
+                [
+                    {"user": "a@example.com", "full_name": "A", "phone": "919900112244"},
+                    # Same number as the field, must not be messaged twice.
+                    {"user": "b@example.com", "full_name": "B", "phone": "919900112233"},
+                ],
+                [],
+            ),
+        ):
+            inline, role = doc.get_recipients(user, user.as_dict())
+
+        self.assertEqual(inline, ["919900112233"])
+        self.assertEqual(role, ["919900112244"])
+
+    @patch("frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification.whatsapp_notification.frappe.enqueue")
+    @patch("frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification.whatsapp_notification.make_post_request")
+    def test_role_recipients_are_queued_not_sent_inline(self, mock_post, mock_enqueue):
+        """Role sends are handed to a background job."""
+        doc = self._make_notification(
+            notification_name="Test Notif Multi",
+            field_name="",
+            roles=["System Manager"],
+        )
+        user = frappe.get_doc("User", "Administrator")
+
+        with patch(
+            "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification"
+            ".whatsapp_notification.get_role_recipients",
+            return_value=(
+                [
+                    {"user": "a@example.com", "full_name": "A", "phone": "919900110001"},
+                    {"user": "b@example.com", "full_name": "B", "phone": "919900110002"},
+                ],
+                [],
+            ),
+        ):
+            doc.send_template_message(user)
+
+        # Nothing sent in the request itself.
+        self.assertFalse(mock_post.called)
+
+        self.assertTrue(mock_enqueue.called)
+        kwargs = mock_enqueue.call_args.kwargs
+        self.assertEqual(kwargs["numbers"], ["919900110001", "919900110002"])
+        self.assertEqual(kwargs["notification"], doc.name)
+        self.assertIsNone(kwargs["data"]["to"])
+
+    @patch("frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification.whatsapp_notification.frappe.enqueue")
+    @patch("frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification.whatsapp_notification.make_post_request")
+    def test_field_recipient_still_sends_inline(self, mock_post, mock_enqueue):
+        """A field-based notification is unaffected by the queue change."""
+        mock_post.return_value = {"messages": [{"id": "wamid.inline_1"}]}
+        frappe.flags.integration_request = MagicMock()
+        frappe.flags.integration_request.json.return_value = {
+            "messages": [{"id": "wamid.inline_1"}]
+        }
+
+        doc = self._make_notification(notification_name="Test Notif InlineOnly")
+        user = frappe.get_doc("User", "Administrator")
+        user.mobile_no = "919900112233"
+
+        doc.send_template_message(user)
+
+        self.assertEqual(mock_post.call_count, 1)
+        self.assertFalse(mock_enqueue.called)
+        sent = json.loads(
+            mock_post.call_args.kwargs.get("data", mock_post.call_args[1].get("data", ""))
+        )
+        self.assertEqual(sent["to"], "919900112233")
+
+    @patch("frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification.whatsapp_notification.make_post_request")
+    def test_no_resolvable_recipients_does_not_send(self, mock_post):
+        """No numbers means no request, not an error."""
+        doc = self._make_notification(
+            notification_name="Test Notif NoNumbers",
+            field_name="",
+            roles=["System Manager"],
+        )
+        user = frappe.get_doc("User", "Administrator")
+
+        with patch(
+            "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification"
+            ".whatsapp_notification.get_role_recipients",
+            return_value=([], [{"user": "a@example.com", "reason": "no phone number"}]),
+        ):
+            doc.send_template_message(user)
+
+        self.assertFalse(mock_post.called)
 
     def test_format_number(self):
         """Test format_number strips leading +."""
@@ -254,6 +400,55 @@ class TestWhatsAppNotification(IntegrationTestCase):
         result = doc.send_template_message(user)
         self.assertIsNone(result)
 
+    def test_scheduler_tick_skips_role_based_doctype_event(self):
+        """The "all" tick must not send DocType Event role notifications.
+
+        trigger_whatsapp_notifications selects on event_frequency alone, and
+        DocType Event notifications carry the hidden default "All", so this
+        path is reached every few minutes in production.
+        """
+        doc = self._make_notification(
+            notification_name="Test Notif TickSkipsDocEvent",
+            field_name="",
+            roles=["System Manager"],
+        )
+        doc.event_frequency = "All"
+
+        target = (
+            "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification"
+            ".whatsapp_notification.get_role_recipients"
+        )
+        with patch(target) as mock_roles, patch.object(doc, "send_simple_template") as mock_send:
+            doc.send_scheduled_message()
+
+        self.assertFalse(mock_roles.called)
+        self.assertFalse(mock_send.called)
+
+    def test_scheduler_tick_sends_role_based_scheduler_event(self):
+        """Genuine Scheduler Event role notifications still send."""
+        doc = self._make_notification(
+            notification_name="Test Notif TickSendsScheduler",
+            notification_type="Scheduler Event",
+            field_name="",
+            roles=["System Manager"],
+        )
+
+        target = (
+            "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification"
+            ".whatsapp_notification.get_role_recipients"
+        )
+        with patch(
+            target,
+            return_value=(
+                [{"user": "a@example.com", "full_name": "A", "phone": "919900110001"}],
+                [],
+            ),
+        ), patch.object(doc, "send_simple_template") as mock_send:
+            doc.send_scheduled_message()
+
+        self.assertTrue(mock_send.called)
+        self.assertEqual(doc._contact_list, ["919900110001"])
+
     def test_scheduler_event_notification(self):
         """Test creating a scheduler event notification."""
         doc = frappe.get_doc({
@@ -268,3 +463,84 @@ class TestWhatsAppNotification(IntegrationTestCase):
         doc.insert(ignore_permissions=True)
         self.assertEqual(doc.notification_type, "Scheduler Event")
         self.assertEqual(doc.event_frequency, "Daily")
+
+
+class TestNotificationPrintFormat(IntegrationTestCase):
+    """The notification can attach a chosen print format."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        TestWhatsAppNotification._ensure_test_account()
+        TestWhatsAppNotification._ensure_test_template()
+
+    def setUp(self):
+        if not frappe.db.exists("Print Format", "Test WA User Print"):
+            frappe.get_doc({
+                "doctype": "Print Format",
+                "name": "Test WA User Print",
+                "doc_type": "User",
+                "module": "Core",
+                "standard": "No",
+                "print_format_type": "Jinja",
+                "html": "<p>{{ doc.name }}</p>",
+            }).insert(ignore_permissions=True)
+
+    def tearDown(self):
+        frappe.db.rollback()
+
+    def make_notification(self, **kwargs):
+        return frappe.get_doc(dict({
+            "doctype": "WhatsApp Notification",
+            "notification_name": "Test print format notification",
+            "notification_type": "DocType Event",
+            "reference_doctype": "User",
+            "doctype_event": "On Update",
+            "field_name": "mobile_no",
+            "template": "test_notif_template-en",
+            "attach_document_print": 1,
+        }, **kwargs))
+
+    def test_explicit_print_format_is_used(self):
+        notification = self.make_notification(print_format="Test WA User Print")
+        self.assertEqual(notification.get_print_format("User"), "Test WA User Print")
+
+    def test_default_print_format_from_property_setter(self):
+        frappe.make_property_setter({
+            "doctype": "User",
+            "doctype_or_field": "DocType",
+            "property": "default_print_format",
+            "value": "Test WA User Print",
+        }, validate_fields_for_doctype=False)
+        frappe.clear_cache(doctype="User")
+        self.assertEqual(self.make_notification().get_print_format("User"), "Test WA User Print")
+
+    def test_standard_when_no_default(self):
+        frappe.db.delete("Property Setter", {"doc_type": "User", "property": "default_print_format"})
+        frappe.clear_cache(doctype="User")
+        self.assertEqual(self.make_notification().get_print_format("User"), "Standard")
+
+    def test_print_format_of_other_doctype_is_rejected(self):
+        frappe.db.set_value("Print Format", "Test WA User Print", "doc_type", "Role")
+        notification = self.make_notification(print_format="Test WA User Print")
+        with self.assertRaises(frappe.ValidationError):
+            notification.validate()
+
+    @patch("frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification.whatsapp_notification.make_post_request")
+    def test_print_link_uses_selected_format(self, mock_post):
+        frappe.db.set_value("WhatsApp Templates", "test_notif_template-en", "header_type", "DOCUMENT")
+        mock_post.return_value = {"messages": [{"id": "wamid.print_1"}]}
+        frappe.flags.integration_request = MagicMock()
+        frappe.flags.integration_request.json.return_value = mock_post.return_value
+
+        notification = self.make_notification(print_format="Test WA User Print")
+        notification.fields = []
+        user = frappe.get_doc("User", "Administrator")
+        notification.send_template_message(user, phone_no="919900000002")
+
+        sent = json.loads(mock_post.call_args.kwargs["data"])
+        header = next(c for c in sent["template"]["components"] if c["type"] == "header")
+        document = header["parameters"][0]["document"]
+        self.assertIn("format=Test+WA+User+Print", document["link"])
+        self.assertIn("&key=", document["link"])
+        self.assertEqual(document["filename"], "Administrator.pdf")

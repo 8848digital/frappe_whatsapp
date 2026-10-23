@@ -1,3 +1,8 @@
+# Copyright (c) 2026 8848 Digital LLP. All rights reserved.
+# Proprietary and confidential. Unauthorized copying, distribution, or use
+# of this file, via any medium, is strictly prohibited without prior
+# written permission from 8848 Digital LLP.
+
 """Webhook."""
 import frappe
 import json
@@ -8,6 +13,7 @@ from werkzeug.wrappers import Response
 import frappe.utils
 
 from frappe_whatsapp.utils import get_whatsapp_account
+from frappe_whatsapp.utils.signature import forbidden, is_verified_meta_request
 
 
 @frappe.whitelist(allow_guest=True)
@@ -37,6 +43,9 @@ def get():
 
 def post():
 	"""Post."""
+	# Guest endpoint: refuse unsigned requests before anything is written.
+	if not is_verified_meta_request():
+		return forbidden()
 	data = frappe.local.form_dict
 	frappe.get_doc({
 		"doctype": "WhatsApp Notification Log",

@@ -1,4 +1,9 @@
-# Bulk WhatsApp Messaging for Frappe WhatsApp
+# Copyright (c) 2026 8848 Digital LLP. All rights reserved.
+# Proprietary and confidential. Unauthorized copying, distribution, or use
+# of this file, via any medium, is strictly prohibited without prior
+# written permission from 8848 Digital LLP.
+
+# Bulk WhatsApp Messaging for Frappe Whatsapp
 # bulk_whatsapp_messaging.py
 
 import frappe
@@ -21,6 +26,11 @@ class BulkWhatsAppMessage(Document):
     def validate(self):
         # self.validate_message()
         self.validate_recipients()
+        self.validate_scheduled_time()
+
+    def validate_scheduled_time(self):
+        if self.scheduled_time and get_datetime(self.scheduled_time) <= get_datetime(now()):
+            frappe.throw(_("Scheduled time must be in the future"))
     
     def validate_message(self):
         if not self.message_content:
@@ -41,8 +51,11 @@ class BulkWhatsAppMessage(Document):
             self.recipient_count = len(self.recipients)
     
     def on_submit(self):
-        self.db_set("status", "Queued")
-        self.queue_messages()
+        if self.scheduled_time and get_datetime(self.scheduled_time) > get_datetime(now()):
+            self.db_set("status", "Scheduled")
+        else:
+            self.db_set("status", "Queued")
+            self.queue_messages()
     
     def queue_messages(self):
         """Queue messages for sending"""
