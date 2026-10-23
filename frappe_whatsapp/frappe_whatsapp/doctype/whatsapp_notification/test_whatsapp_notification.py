@@ -466,6 +466,12 @@ class TestWhatsAppNotification(IntegrationTestCase):
 class TestNotificationPrintFormat(IntegrationTestCase):
     """The notification can attach a chosen print format."""
 
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        TestWhatsAppNotification._ensure_test_account()
+        TestWhatsAppNotification._ensure_test_template()
+
     def setUp(self):
         if not frappe.db.exists("Print Format", "Test WA User Print"):
             frappe.get_doc({
