@@ -83,6 +83,7 @@ app_include_js = "/assets/whatsapp_integration/js/whatsapp_integration.js"
 
 # before_install = "whatsapp_integration.install.before_install"
 # after_install = "whatsapp_integration.install.after_install"
+after_migrate = "whatsapp_integration.migrate.after_migrate"
 
 # Uninstallation
 # ------------

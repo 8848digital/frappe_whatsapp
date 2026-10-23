@@ -1,0 +1,14 @@
+{
+    "Task": [
+        {
+            "fieldname": "custom_mobile_no",
+            "fieldtype": "Data",
+            "options": "Phone",
+            "insert_after": "custom_responsible",
+            "label": "Mobile No",
+            "fetch_from": "custom_responsible.mobile_no",
+            "read_only": 1,
+            "in_list_view": 0
+        }
+    ]
+}
