@@ -11,6 +11,7 @@ from frappe.desk.form.utils import get_pdf_link
 from frappe.utils import add_to_date, nowdate, datetime
 
 from frappe_whatsapp.utils import get_whatsapp_account, sanitize_param
+from frappe_whatsapp.utils.media import get_media_object
 from frappe_whatsapp.utils.recipients import get_role_recipients, log_skipped
 
 
@@ -204,6 +205,7 @@ class WhatsAppNotification(Document):
                     "parameters": parameters
                 }]
 
+            media = None
             if self.attach_document_print:
                 key = doc.get_document_share_key()  # noqa
                 print_format = "Standard"
@@ -227,45 +229,41 @@ class WhatsAppNotification(Document):
                     print_format=print_format
                 )
 
-                filename = f'{doc_data["name"]}.pdf'
-                url = f'{frappe.utils.get_url()}{link}&key={key}'
+                media = {
+                    "link": f'{frappe.utils.get_url()}{link}&key={key}',
+                    "filename": f'{doc_data["name"]}.pdf',
+                }
 
             elif self.custom_attachment:
-                filename = self.file_name
-
                 if self.attach_from_field:
-                    file_url = doc_data[self.attach_from_field]
-                    if not file_url.startswith("http"):
-                        # get share key so that private files can be sent
-                        key = doc.get_document_share_key()
-                        file_url = f'{frappe.utils.get_url()}{file_url}&key={key}'
+                    file_url = doc_data.get(self.attach_from_field)
                 else:
                     file_url = self.attach
 
-                if file_url.startswith("http"):
-                    url = f'{file_url}'
-                else:
-                    url = f'{frappe.utils.get_url()}{file_url}'
+                if file_url:
+                    # Upload the file to Meta: a link to a private file, or to
+                    # a site Meta cannot reach, fails with "Unable to upload
+                    # the media" after Meta has already accepted the send.
+                    media = get_media_object(
+                        self.get_whatsapp_account(), file_url, self.file_name
+                    )
 
-            if template.header_type == 'DOCUMENT':
+            if media and template.header_type == 'DOCUMENT':
                 data['template']['components'].append({
                     "type": "header",
                     "parameters": [{
                         "type": "document",
-                        "document": {
-                            "link": url,
-                            "filename": filename
-                        }
+                        "document": media
                     }]
                 })
-            elif template.header_type == 'IMAGE':
+            elif media and template.header_type in ('IMAGE', 'VIDEO'):
+                media_type = template.header_type.lower()
+                media.pop("filename", None)
                 data['template']['components'].append({
                     "type": "header",
                     "parameters": [{
-                        "type": "image",
-                        "image": {
-                            "link": url
-                        }
+                        "type": media_type,
+                        media_type: media
                     }]
                 })
             self.content_type = template.header_type.lower() if template.header_type else None
@@ -428,9 +426,8 @@ class WhatsAppNotification(Document):
 
             frappe.db.set_value(doc_data.get("doctype"), doc_data.get("name"), fieldname, value)
 
-    def notify(self, data, doc_data=None):
-        """Notify."""
-        # Use notification WhatsApp account if available, otherwise use a default outgoing account
+    def get_whatsapp_account(self):
+        """Account of this notification, or the default outgoing account."""
         if self.whatsapp_account:
             whatsapp_account = frappe.get_doc("WhatsApp Account", self.whatsapp_account)
         else:
@@ -438,7 +435,11 @@ class WhatsAppNotification(Document):
 
         if not whatsapp_account:
             frappe.throw(_("Please set a default outgoing WhatsApp Account"))
+        return whatsapp_account
 
+    def notify(self, data, doc_data=None):
+        """Notify."""
+        whatsapp_account = self.get_whatsapp_account()
         token = whatsapp_account.get_password("token")
 
         headers = {
