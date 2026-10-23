@@ -1,9 +1,10 @@
 [project]
-name = "frappe_whatsapp"
+name = "whatsapp_integration"
 authors = [
-    { name = "Shridhar Patil", email = "shrip.dev@gmail.com"}
+    { name = "8848 Digital LLP", email = "satya@8848digital.com"}
 ]
-description = "WhatsApp integration for frappe. Use directly meta API's without any 3rd party integration."
+description = "Send and receive WhatsApp messages from Frappe through the Meta Cloud API."
+license = { text = "Proprietary" }
 requires-python = ">=3.10"
 readme = "README.md"
 dynamic = ["version"]
