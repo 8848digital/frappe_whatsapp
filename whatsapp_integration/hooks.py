@@ -12,6 +12,18 @@ app_description = "Send and receive WhatsApp messages from Frappe through the Me
 app_email = "satya@8848digital.com"
 app_license = "Proprietary"
 
+custom_fixtures = [
+    {
+        "dt": "Custom Field",
+        "filters": {"module": ["in", ["WhatsApp Integration"]]},
+    }
+]
+
+commands = [
+    "whatsapp_integration.commands.export_fixtures.export_fixtures",
+    "whatsapp_integration.setup.rename.migrate_from_frappe_whatsapp_command",
+]
+
 # Includes in <head>
 # ------------------
 
