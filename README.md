@@ -1,244 +1,299 @@
-<div align="right">
-	<a href="https://frappecloud.com/marketplace/apps/frappe_whatsapp" target="_blank">
-		<picture>
-			<source media="(prefers-color-scheme: dark)" srcset="https://frappe.io/files/try-on-fc-white.png">
-			<img src="https://frappe.io/files/try-on-fc-black.png" alt="Try on Frappe Cloud" height="28" />
-		</picture>
-	</a>
-</div>
+<!--
+Copyright (c) 2026 8848 Digital LLP. All rights reserved.
+Proprietary and confidential. Unauthorized copying, distribution, or use
+of this file, via any medium, is strictly prohibited without prior
+written permission from 8848 Digital LLP.
+-->
 
-# Frappe WhatsApp
+# Frappe Whatsapp
 
-[Documentation](https://shridarpatil.github.io/frappe_whatsapp/)
+Send and receive WhatsApp messages from Frappe and ERPNext through the
+Meta WhatsApp Cloud API. You do not need a third-party gateway.
 
-WhatsApp integration for Frappe/ERPNext. Use Meta's WhatsApp Cloud API directly without any third-party integration.
+| | |
+| --- | --- |
+| **Frappe versions** | 14, 15 and 16 |
+| **Python package** | `frappe_whatsapp` |
+| **Module** | Frappe Whatsapp |
+| **License** | Proprietary, 8848 Digital LLP |
 
-[![WhatsApp Video](https://img.youtube.com/vi/nq5Kcc5e1oc/0.jpg)](https://www.youtube.com/watch?v=nq5Kcc5e1oc)
+## Contents
 
-[![YouTube](http://i.ytimg.com/vi/TncXQ0UW5UM/hqdefault.jpg)](https://www.youtube.com/watch?v=TncXQ0UW5UM)
+1. [What the app does](#what-the-app-does)
+2. [Install](#install)
+3. [Step 1: Connect a WhatsApp account](#step-1-connect-a-whatsapp-account)
+4. [Step 2: Set the webhook in Meta](#step-2-set-the-webhook-in-meta)
+5. [Step 3: Add templates](#step-3-add-templates)
+6. [Step 4: Send messages automatically (notifications)](#step-4-send-messages-automatically-notifications)
+7. [Step 5: Send a campaign (bulk messages)](#step-5-send-a-campaign-bulk-messages)
+8. [See the chat on the document (timeline)](#see-the-chat-on-the-document-timeline)
+9. [Send a template from code](#send-a-template-from-code)
+10. [Development](#development)
 
-![whatsapp](https://user-images.githubusercontent.com/11792643/203741234-29edeb1b-e2f9-4072-98c4-d73a84b48743.gif)
+## What the app does
 
-> **Note:** If you're not using live credentials, follow [step no 2](https://developers.facebook.com/docs/whatsapp/cloud-api/get-started) to add the number on Meta to which you are sending messages.
+| Feature | What you get |
+| ------- | ------------ |
+| **Accounts** | Connect one or more WhatsApp Business accounts. Set a default account for incoming and for outgoing messages. |
+| **Messages** | Send and receive text, images, documents, video, audio, reactions, buttons, lists and WhatsApp Flows. |
+| **Templates** | Create templates, send them to Meta for approval, and sync them from Meta. |
+| **Notifications** | Send a template when a document is saved, submitted, cancelled and so on, or on a schedule. Attach a PDF of the document or a file. |
+| **Bulk messages** | Send a template to a list of numbers, now or at a set time. See the progress and retry failed messages. |
+| **Timeline** | See the WhatsApp messages of a document in its timeline. |
+| **Webhook** | Receive messages, delivery status and template status from Meta. Only requests signed by Meta are accepted. |
 
-## Features
+## Install
 
-- **Multi-Account Support** - Manage multiple WhatsApp Business accounts
-- **Two-way Messaging** - Send and receive messages with full conversation tracking
-- **Template Management** - Create and sync WhatsApp templates with Meta
-- **WhatsApp Flows** - Build interactive forms using WhatsApp's native Flow Builder
-- **Interactive Messages** - Send button and list messages for quick user responses
-- **WhatsApp Notifications** - Automated notifications triggered by DocType events
-- **Bulk Messaging** - Send campaigns to recipient lists with variable substitution
-- **Webhook Support** - Real-time message delivery and status updates
-- **Media Support** - Send and receive images, documents, videos, and audio files
-- **Sync from Meta** - Import and sync templates and flows from your Meta Business Account
-- **ERPNext Integration** - Native integration with Frappe/ERPNext DocTypes
-
-## Installation
-
-### Step 1: Get the app
 ```bash
-bench get-app https://github.com/shridarpatil/frappe_whatsapp
+bench get-app https://github.com/8848digital/frappe_whatsapp
+bench --site <site> install-app frappe_whatsapp
+bench --site <site> migrate
 ```
 
-### Step 2: Install on your site
-```bash
-bench --site [sitename] install-app frappe_whatsapp
-```
+Before you start, create a Meta app with the WhatsApp product. See
+[Get started](https://developers.facebook.com/docs/whatsapp/cloud-api/get-started)
+in the Meta documentation. You need these values from the Meta App
+Dashboard:
 
-## Quick Setup
+| Value | Where to find it in Meta |
+| ----- | ------------------------ |
+| Access token | WhatsApp > API Setup (use a permanent system user token for production) |
+| Phone number ID | WhatsApp > API Setup |
+| WhatsApp Business Account ID | WhatsApp > API Setup |
+| App ID and App Secret | App settings > Basic |
 
-### 1. Get WhatsApp Credentials
-Visit [Meta Developer Portal](https://developers.facebook.com/docs/whatsapp/cloud-api/get-started) to set up your WhatsApp Business API.
+## Step 1: Connect a WhatsApp account
 
-### 2. Configure WhatsApp Account
-Go to **WhatsApp Account** in Frappe and enter your credentials:
-- Account Name
-- Access Token
-- Phone Number ID
-- Business Account ID
-- App ID
-- Webhook Verify Token
+1. Go to **WhatsApp Account** and click **Add WhatsApp Account**.
+2. Enter the values from the table above. Set **URL** to
+   `https://graph.facebook.com` and **Version** to the Graph API version,
+   for example `v21.0`.
+3. In **Webhook Verify Token**, type any secret text. You use the same
+   text in Meta in step 2.
+4. Enter the **App Secret**. The app uses it to check that webhook calls
+   come from Meta.
+5. Select **Is Default Incoming** and **Is Default Outgoing** if this is
+   your main account.
+6. Save, then click **Subscribe App to Webhooks**.
 
-![WhatsApp Settings](https://user-images.githubusercontent.com/11792643/198827382-90283b36-f8ab-430e-a909-1b600d6f5da4.png)
+![WhatsApp Account form with the App Secret field and the Subscribe App to Webhooks button](docs/images/account.png)
 
-### 3. Create Templates
-Create WhatsApp templates that are approved by Meta:
+## Step 2: Set the webhook in Meta
 
-![Create Template](https://user-images.githubusercontent.com/11792643/198827355-ebf9c113-f39a-4d37-98f7-38f719fb2d1f.png)
+In the Meta App Dashboard, go to **WhatsApp > Configuration** and edit the
+webhook:
 
-## Core Features
+| Meta field | Value |
+| ---------- | ----- |
+| Callback URL | `https://<your-site>/api/method/frappe_whatsapp.utils.webhook.webhook` |
+| Verify token | The **Webhook Verify Token** from step 1 |
+| Webhook fields | Subscribe to `messages` and `message_template_status_update` |
 
-### WhatsApp Notifications
+Meta signs each webhook call with your App Secret. When an active
+WhatsApp Account has an App Secret, the app refuses calls without a valid
+signature (HTTP 403) and saves nothing.
 
-Automatically send WhatsApp messages based on DocType events.
+> **Note:** If no account has an App Secret, the app accepts the calls and
+> logs a warning. To refuse unsigned calls in all cases, run
+> `bench --site <site> set-config whatsapp_require_signed_webhooks 1`.
 
-**Supported Triggers:**
-- DocType Events: Before/After Insert, Validate, Save, Submit, Cancel, Delete
-- Scheduler Events: Hourly, Daily, Weekly, Monthly
-- Date-based: Days Before/After a specified date field
+## Step 3: Add templates
 
-![WhatsApp Notification](https://user-images.githubusercontent.com/11792643/198827295-f6d756a3-6289-40b3-99ea-0394efb61041.png)
+To start a conversation, WhatsApp requires a template that Meta has
+approved. You can send free text only within 24 hours of the customer's
+last message.
 
-**Features:**
-- Map template parameters to DocType fields
-- Add conditions using Python expressions
-- Attach document print PDFs or custom files
-- Set DocType field values after sending (e.g., mark as notified)
-- Support for interactive buttons with dynamic URLs
+- **To get existing templates:** go to **WhatsApp Templates** and click
+  **Sync from Meta**.
+- **To make a new template:** click **Add WhatsApp Templates**. Write the
+  text with `{{1}}`, `{{2}}` for the variable parts, give sample values,
+  and save. The template goes to Meta for approval. The status changes
+  to **APPROVED** when Meta approves it.
 
-### Bulk WhatsApp Messages
+In **Field names**, you can enter the document fields that fill
+`{{1}}`, `{{2}}` and so on, in order. Set **Header Type** to `DOCUMENT`,
+`IMAGE` or `VIDEO` to send a file with the message.
 
-Send WhatsApp messages to multiple recipients at once.
+![WhatsApp Template with three variables and a document header](docs/images/template.png)
 
-**Features:**
-- Import recipients from any DocType (Customer, Contact, etc.)
-- Create recipient lists for reuse
-- Variable substitution from recipient data
-- Background processing with progress tracking
-- Retry failed messages
-- Select specific WhatsApp account for sending
+## Step 4: Send messages automatically (notifications)
 
-**Recipient Types:**
-1. **Individual Recipients** - Add recipients directly with their phone numbers
-2. **Recipient List** - Use a pre-configured WhatsApp Recipient List
+A **WhatsApp Notification** sends a template when something happens to a
+document. The example below sends the invoice PDF to the customer when a
+Sales Invoice is submitted and paid.
 
-**Variable Types:**
-1. **Common** - Same values for all recipients
-2. **Unique** - Different values per recipient (from recipient data)
+1. Go to **WhatsApp Notification** and click **Add WhatsApp Notification**.
+2. Set **Notification Type**:
+   - **DocType Event**: send when a document is inserted, saved,
+     submitted, cancelled or deleted, or a number of days before or after
+     a date in the document.
+   - **Scheduler Event**: send hourly, daily, weekly or monthly.
+3. Set **Reference Document Type** (for example Sales Invoice) and the
+   **DocType Event** (for example After Submit).
+4. Select the **Template**. The template text shows below it.
+5. Choose who gets the message:
+   - **Field Name (Phone Number)**: a field of the document that holds the
+     mobile number, for example `contact_mobile`.
+   - **Recipients by Role**: every user with that role. You can use both.
+6. In **Fields**, add the document fields for `{{1}}`, `{{2}}` and so on, in
+   order.
+7. Optional: add a **Condition** in Python, for example
+   `doc.status == "Paid"`. The message is sent only when it is true.
+8. Optional: attach a file (see below). Then save.
 
-### Direct Messaging
+![WhatsApp Notification that sends the Sales Invoice PDF in a selected print format when the invoice is paid](docs/images/notification.png)
 
-Send messages without templates (within 24-hour window):
+### Attach a PDF of the document
 
-![Direct Message](https://user-images.githubusercontent.com/11792643/211518862-de2d3fbc-69c8-48e1-b000-8eebf20b75ab.png)
+Select **Attach Document Print**. In **Print Format**, select the format
+to send. If you leave it empty, the default print format of the doctype
+is used.
 
-### Interactive Messages
+To send a different print format for different cases, make one
+notification for each case. For example, one notification with the
+condition `doc.status == "Paid"` and a "Paid" format, and one with
+`doc.status == "Partly Paid"` and a "Partly Paid" format.
 
-Send interactive button and list messages for quick user responses.
+### Attach a file
 
-**Button Messages:**
-- Up to 3 quick reply buttons
-- Users tap to respond instantly
-- Great for confirmations, options, and CTAs
+Select **Custom attachment**, then do one of these:
 
-**List Messages:**
-- Up to 10 items organized in sections
-- Users select from a menu
-- Ideal for product catalogs, service menus, FAQs
+- Attach a file in **Attach** to send the same file every time.
+- Enter an Attach field of the document in **Attach from field** to send
+  the file of that document.
 
-### WhatsApp Flows
+The app uploads the file to Meta and sends it as a media ID. Private
+files, and sites that Meta cannot reach (for example a local or VPN
+server), work too.
 
-Build interactive forms using WhatsApp's native Flow Builder. Flows provide a rich UI experience for collecting structured data from users.
+## Step 5: Send a campaign (bulk messages)
 
-**Features:**
-- Visual form builder with multiple screens
-- Support for text inputs, dropdowns, date pickers, and more
-- Client-only flows (no endpoint required)
-- Publish and manage flows directly from Frappe
-- Send flow messages and receive responses via webhook
+1. Optional: go to **WhatsApp Recipient List** and make a list. You can
+   add numbers by hand or import them from any doctype, for example
+   Customer or Contact.
+2. Go to **Bulk WhatsApp Message** and click **Add Bulk WhatsApp Message**.
+3. Enter a **Title**. Set **Recipient Type** to **Individual** (add
+   numbers in the table) or **Recipient List** (select a list).
+4. Select **Use Template** and the **Template**. Set **Variable Type**:
+   - **Common**: the same values for all recipients. Enter them in
+     **Template Variables**.
+   - **Unique**: the values come from the data of each recipient.
+5. Optional: set **Scheduled Time** to send later.
+6. Submit.
 
-**Supported Field Types:**
-- TextInput, TextArea
-- Dropdown (with static options)
-- DatePicker
-- RadioButtonsGroup, CheckboxGroup
-- OptIn
-- Text display components (TextHeading, TextBody, TextSubheading, TextCaption)
+Without a scheduled time, the messages are sent at once in the
+background. With a scheduled time, the status is **Scheduled** until that
+time. Click **Check Progress** to see how many are sent, and **Retry
+Failed Messages** to send the failed ones again.
 
-**Flow Actions:**
-- Create on WhatsApp - Push new flows to Meta
-- Upload Flow JSON - Update flow definition
-- Publish - Make flow available to all users
-- Deprecate - Mark flow as deprecated
-- Send Test - Test draft flows with registered test numbers
-- Sync from Meta - Import existing flows back to Frappe
+![Bulk WhatsApp Message scheduled for a later date, with the Check Progress and Retry Failed Messages buttons](docs/images/bulk.png)
 
-### Sync from Meta
+## See the chat on the document (timeline)
 
-Keep your Frappe data synchronized with your Meta Business Account.
+Each WhatsApp Message that is linked to a document shows in the timeline
+of that document. You can see the sent and received messages, the
+number, the delivery status and the text, together with emails and
+comments. Click a card to open the message.
 
-**Templates:**
-- Go to **WhatsApp Templates** list view
-- Click **Sync from Meta** button
-- All templates from active WhatsApp accounts are imported/updated
+Messages sent by a notification are linked to their document
+automatically. Users see the cards only if they can read WhatsApp
+Message.
 
-**Flows:**
-- Go to **WhatsApp Flow** list view
-- Click **Sync from Meta** button
-- Select the WhatsApp Account to sync from
-- New flows are imported, existing flows are updated with latest status and JSON
+![Contact timeline with one sent template and two received WhatsApp messages](docs/images/timeline.png)
 
-### Custom Data Templates
+## Send a template from code
 
-Send templates using custom data instead of DocType fields:
+In a **Scheduler Event** notification, the condition can choose the
+documents and numbers to send to:
 
 ```python
+invoices = frappe.get_list(
+    "Sales Invoice",
+    filters={"status": "Overdue"},
+    fields=["name", "contact_mobile"],
+)
 doc.set("_data_list", [
-    {"phone": "+1234567890", "name": "John", "order_id": "ORD-001"},
-    {"phone": "+0987654321", "name": "Jane", "order_id": "ORD-002"}
+    {"name": inv.name, "phone_no": inv.contact_mobile} for inv in invoices
 ])
 ```
 
-![Custom Data](https://github.com/user-attachments/assets/7496b081-df2b-41dc-bdcb-ed7e5f464698)
+To send a template without document fields, set `_contact_list`
+instead, for example `doc.set("_contact_list", ["919900000000"])`.
 
-## Webhook Setup
+## Development
 
-### Configure Webhook on Meta
-1. Go to your Meta Developer App
-2. Set Webhook URL: `<your-domain>/api/method/frappe_whatsapp.utils.webhook.webhook`
-3. Add Verify Token (same as in WhatsApp Account settings)
-4. Subscribe to webhook fields:
-   - `messages` - to receive incoming messages
-   - `message_template_status_update` - for template status updates
+The app follows the 8848 custom app setup
+([custom_app_setup.md](https://github.com/8848digital/skills/blob/8848-skills/project_base_template/custom_app_setup.md)).
 
-### Incoming Messages
-Messages received via webhook are automatically created as WhatsApp Message documents:
+### Set up pre-commit
 
-![Incoming Message](https://user-images.githubusercontent.com/11792643/211519625-a528abe2-ba24-46a4-bcbc-170f6b4e27fb.png)
+Do this once in each clone, with the bench environment active:
 
-## Multi-Account Support
+```bash
+cd apps/frappe_whatsapp
+pip install pre-commit
+pre-commit install
+```
 
-Manage multiple WhatsApp Business accounts for different use cases:
+Each commit then runs these checks on the changed files:
 
-- Set default accounts for incoming and outgoing messages
-- Select specific accounts when sending bulk messages
-- Route notifications through designated accounts
-- Auto-read receipts per account
+| Check | Configuration |
+| ----- | ------------- |
+| black, isort, ruff settings | `pyproject.toml` |
+| flake8 | `.flake8` |
+| eslint, prettier | `.eslintrc` |
+| Maximum 250 lines in a Python file | `scripts/check_max_lines.py` |
+| No direct commits to `master` or `develop` | `.pre-commit-config.yaml` |
 
-## Recommended Apps
+To check all files, run `pre-commit run --all-files`.
 
-Enhance your WhatsApp experience with these companion apps:
+> **Note:** Some existing files are longer than 250 lines. If you change
+> one of them, split it or move code out before you commit.
 
-### WhatsApp Chat
-A chat app for Frappe Desk to manage WhatsApp conversations.
+### Commit messages
 
-| | |
-|---|---|
-| **Features** | Real-time messaging, media support, contact management, read receipts |
-| **Install** | `bench get-app https://github.com/shridarpatil/whatsapp_chat` |
-| **Marketplace** | <a href="https://frappecloud.com/marketplace/apps/whatsapp_chat"><img src="https://frappe.io/files/try-on-fc-black.png" alt="Try on Frappe Cloud" height="28" /></a> |
-| **Use Cases** | Customer conversations, sales follow-ups, support tickets |
+Use conventional commits, for example `feat: ...`, `fix: ...` or
+`chore: ...`. The allowed types are in `commitlint.config.js`. The
+**Linters** workflow checks the commit messages of each pull request. It
+also runs the Frappe Semgrep rules and `pip-audit`.
 
-### WhatsApp Chatbot
-Build automated chatbots with flows, keyword replies, and AI-powered responses.
+### Agent skills
 
-| | |
-|---|---|
-| **Features** | Multi-step flows, keyword matching, AI fallback (OpenAI/Anthropic/Google), session management |
-| **Install** | `bench get-app https://github.com/shridarpatil/frappe_whatsapp_chatbot` |
-| **Marketplace** | <a href="https://frappecloud.com/marketplace/apps/frappe_whatsapp_chatbot"><img src="https://frappe.io/files/try-on-fc-black.png" alt="Try on Frappe Cloud" height="28" /></a> |
-| **Use Cases** | Customer support, order status, appointment booking, lead capture |
+`.claude/skills/` and `CLAUDE.md` come from
+[8848digital/skills](https://github.com/8848digital/skills). Do not edit
+them in this repo. To get the latest version, run:
 
-## Documentation
+```bash
+scripts/sync_skills.sh
+```
 
-For detailed documentation, visit [https://shridarpatil.github.io/frappe_whatsapp/](https://shridarpatil.github.io/frappe_whatsapp/)
+The script also updates `frappe_whatsapp/commands/` and
+`frappe_whatsapp/utils/api_handlers/`. Do not add code to those
+template files, because the script overwrites them.
 
-## Contributing
+### Bench commands
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+```bash
+bench --site <site> 8848-export-fixtures --app frappe_whatsapp
+```
+
+This command exports the Custom Fields of the Frappe Whatsapp module
+(the `custom_fixtures` hook).
+
+### CodeGraph
+
+To build the local code index, run `codegraph install` in the app folder.
+The `.codegraph/` folder is in `.gitignore`.
+
+### Tests
+
+```bash
+bench --site <test-site> set-config allow_tests true
+bench --site <test-site> run-tests --app frappe_whatsapp
+```
 
 ## License
 
-MIT
+Proprietary — Copyright (c) 2026 8848 Digital LLP. All rights reserved.
+See [license.txt](license.txt) for details, including the third-party
+notice.

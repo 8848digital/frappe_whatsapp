@@ -1,5 +1,7 @@
-# Copyright (c) 2025, Shridhar Patil and Contributors
-# See license.txt
+# Copyright (c) 2026 8848 Digital LLP. All rights reserved.
+# Proprietary and confidential. Unauthorized copying, distribution, or use
+# of this file, via any medium, is strictly prohibited without prior
+# written permission from 8848 Digital LLP.
 
 from unittest.mock import patch, MagicMock
 
@@ -210,6 +212,20 @@ class TestGetNotificationsMap(IntegrationTestCase):
         self.assertIn("User", result)
         self.assertIn("After Save", result["User"])
         self.assertIn("Test Utils Map Notif", result["User"]["After Save"])
+
+    def test_saving_a_notification_refreshes_the_map(self):
+        """A new or changed notification applies without a cache clear."""
+        # Creates the notification and warms the cache.
+        self.test_maps_doctype_to_events()
+        notification = frappe.get_doc("WhatsApp Notification", "Test Utils Map Notif")
+
+        notification.disabled = 1
+        notification.save(ignore_permissions=True)
+        self.assertNotIn("Test Utils Map Notif", get_notifications_map().get("User", {}).get("After Save", []))
+
+        notification.disabled = 0
+        notification.save(ignore_permissions=True)
+        self.assertIn("Test Utils Map Notif", get_notifications_map()["User"]["After Save"])
 
 
 class TestRunServerScriptForDocEvent(IntegrationTestCase):

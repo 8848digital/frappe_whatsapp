@@ -1,5 +1,8 @@
-// Copyright (c) 2022, Shridhar Patil and contributors
-// For license information, please see license.txt
+// Copyright (c) 2026 8848 Digital LLP. All rights reserved.
+// Proprietary and confidential. Unauthorized copying, distribution, or use
+// of this file, via any medium, is strictly prohibited without prior
+// written permission from 8848 Digital LLP.
+
 frappe.notification = {
 	setup_fieldname_select: function (frm) {
 		// get the doctype to update fields
@@ -71,6 +74,11 @@ frappe.notification = {
 
 
 frappe.ui.form.on('WhatsApp Notification', {
+	setup: function(frm) {
+		frm.set_query("print_format", function() {
+			return { filters: { doc_type: frm.doc.reference_doctype } };
+		});
+	},
 	refresh: function(frm) {
 		frm.trigger("load_template")
 		frappe.notification.setup_fieldname_select(frm);

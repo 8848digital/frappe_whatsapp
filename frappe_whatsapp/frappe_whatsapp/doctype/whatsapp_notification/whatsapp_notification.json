@@ -20,6 +20,7 @@
   "template",
   "code",
   "attach_document_print",
+  "print_format",
   "custom_attachment",
   "attach",
   "attach_from_field",
@@ -51,7 +52,7 @@
   },
   {
    "depends_on": "eval:doc.notification_type == \"Scheduler Event\"",
-   "description": "Tip: You can use \"Custom\" when you don\u2019t want a default frequency, but you must set up the custom schedule manually after selecting this option.",
+   "description": "Tip: You can use \"Custom\" when you don’t want a default frequency, but you must set up the custom schedule manually after selecting this option.",
    "fieldname": "event_frequency",
    "fieldtype": "Select",
    "label": "Event Frequency",
@@ -141,6 +142,14 @@
    "fieldname": "attach_document_print",
    "fieldtype": "Check",
    "label": " Attach Document Print"
+  },
+  {
+   "depends_on": "eval:doc.attach_document_print",
+   "fieldname": "print_format",
+   "fieldtype": "Link",
+   "label": "Print Format",
+   "options": "Print Format",
+   "description": "Leave empty to use the default print format of the Reference Document Type. To send a different format per case (e.g. Paid and Partly Paid), make one notification per format with a Condition."
   },
   {
    "default": "0",
@@ -243,7 +252,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-02 14:46:33.821117",
+ "modified": "2026-10-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Notification",

@@ -1,7 +1,10 @@
+# Copyright (c) 2026 8848 Digital LLP. All rights reserved.
+# Proprietary and confidential. Unauthorized copying, distribution, or use
+# of this file, via any medium, is strictly prohibited without prior
+# written permission from 8848 Digital LLP.
+
 """Create whatsapp template."""
 
-# Copyright (c) 2022, Shridhar Patil and contributors
-# For license information, please see license.txt
 import json
 import frappe
 import magic
