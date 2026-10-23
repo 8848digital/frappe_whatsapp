@@ -19,10 +19,7 @@ custom_fixtures = [
     }
 ]
 
-commands = [
-    "whatsapp_integration.commands.export_fixtures.export_fixtures",
-    "whatsapp_integration.setup.rename.migrate_from_frappe_whatsapp_command",
-]
+commands = ["whatsapp_integration.commands.export_fixtures.export_fixtures"]
 
 # Includes in <head>
 # ------------------

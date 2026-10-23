@@ -37,29 +37,33 @@ class TestMedia(IntegrationTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		if not frappe.db.exists("WhatsApp Account", ACCOUNT):
-			frappe.get_doc({
-				"doctype": "WhatsApp Account",
-				"account_name": ACCOUNT,
-				"status": "Active",
-				"url": "https://graph.facebook.com",
-				"version": "v17.0",
-				"phone_id": "media_test_phone_id",
-				"webhook_verify_token": "media_test_verify_token",
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "WhatsApp Account",
+					"account_name": ACCOUNT,
+					"status": "Active",
+					"url": "https://graph.facebook.com",
+					"version": "v17.0",
+					"phone_id": "media_test_phone_id",
+					"webhook_verify_token": "media_test_verify_token",
+				}
+			).insert(ignore_permissions=True)
 		if not frappe.db.exists("WhatsApp Templates", TEMPLATE):
-			frappe.get_doc({
-				"doctype": "WhatsApp Templates",
-				"template_name": "test_media_doc_template",
-				"actual_name": "test_media_doc_template",
-				"template": "Your invoice is attached",
-				"category": "UTILITY",
-				"language": frappe.db.get_value("Language", {"language_code": "en"}) or "en",
-				"language_code": "en",
-				"whatsapp_account": ACCOUNT,
-				"status": "APPROVED",
-				"id": "test_media_doc_template_id",
-				"header_type": "DOCUMENT",
-			}).db_insert()
+			frappe.get_doc(
+				{
+					"doctype": "WhatsApp Templates",
+					"template_name": "test_media_doc_template",
+					"actual_name": "test_media_doc_template",
+					"template": "Your invoice is attached",
+					"category": "UTILITY",
+					"language": frappe.db.get_value("Language", {"language_code": "en"}) or "en",
+					"language_code": "en",
+					"whatsapp_account": ACCOUNT,
+					"status": "APPROVED",
+					"id": "test_media_doc_template_id",
+					"header_type": "DOCUMENT",
+				}
+			).db_insert()
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- test fixture must be visible to later queries
 
 	def setUp(self):
@@ -70,12 +74,14 @@ class TestMedia(IntegrationTestCase):
 		frappe.db.rollback()
 
 	def make_file(self, is_private=0, name="invoice.pdf"):
-		return frappe.get_doc({
-			"doctype": "File",
-			"file_name": name,
-			"content": b"%PDF-1.4 test",
-			"is_private": is_private,
-		}).insert(ignore_permissions=True)
+		return frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": name,
+				"content": b"%PDF-1.4 test",
+				"is_private": is_private,
+			}
+		).insert(ignore_permissions=True)
 
 	def test_get_local_file_resolves_relative_and_absolute_urls(self):
 		file_doc = self.make_file()
@@ -119,18 +125,20 @@ class TestMedia(IntegrationTestCase):
 		"""Forum report: Attach from field failed with "Unable to upload the media"."""
 		file_doc = self.make_file(is_private=1)
 		frappe.db.set_value("User", "Administrator", "user_image", file_doc.file_url)
-		notification = frappe.get_doc({
-			"doctype": "WhatsApp Notification",
-			"notification_name": "Test media notification",
-			"notification_type": "DocType Event",
-			"reference_doctype": "User",
-			"doctype_event": "On Update",
-			"template": TEMPLATE,
-			"whatsapp_account": ACCOUNT,
-			"custom_attachment": 1,
-			"attach_from_field": "user_image",
-			"file_name": "Invoice.pdf",
-		})
+		notification = frappe.get_doc(
+			{
+				"doctype": "WhatsApp Notification",
+				"notification_name": "Test media notification",
+				"notification_type": "DocType Event",
+				"reference_doctype": "User",
+				"doctype_event": "On Update",
+				"template": TEMPLATE,
+				"whatsapp_account": ACCOUNT,
+				"custom_attachment": 1,
+				"attach_from_field": "user_image",
+				"file_name": "Invoice.pdf",
+			}
+		)
 		user = frappe.get_doc("User", "Administrator")
 
 		with patch(MEDIA_POST, upload_ok("media-999")), patch(NOTIFY_POST) as notify_post:
