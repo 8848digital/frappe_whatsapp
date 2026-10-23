@@ -519,6 +519,10 @@ class WhatsAppNotification(Document):
         return success
 
 
+    def on_update(self):
+        """Rebuild the doctype/event map so the change applies at once."""
+        frappe.cache().delete_value("whatsapp_notification_map")
+
     def on_trash(self):
         """On delete remove from schedule."""
         frappe.cache().delete_value("whatsapp_notification_map")
